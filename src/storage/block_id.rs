@@ -7,17 +7,14 @@ pub struct BlockId {
 }
 
 impl BlockId {
-    /// Creates a new BlockId with the specified filename and block number.
     pub fn new(filename: String, blknum: i32) -> Self {
         BlockId { filename, blknum }
     }
     
-    /// Returns the filename associated with this block.
     pub fn filename(&self) -> &str {
         &self.filename
     }
     
-    /// Returns the block number.
     pub fn number(&self) -> i32 {
         self.blknum
     }

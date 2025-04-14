@@ -1,39 +1,40 @@
-use std::io::{Cursor, Read, Write};
+use std::io::Cursor;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 /// Represents a page of data in the database.
 /// A page is a fixed-size block of bytes that can store various data types.
 pub struct Page {
-    buffer: Vec<u8>,
+    buffer: Vec<u8>, // TODO consider either using bytes crate or slice
 }
 
 impl Page {
-    /// Creates a new empty page with the specified block size.
-    pub fn new(blocksize: usize) -> Self {
+    pub fn new(block_size: usize) -> Self {
         Page {
-            buffer: vec![0; blocksize],
+            buffer: vec![0; block_size],
         }
     }
 
-    /// Creates a page from an existing byte array.
     pub fn from_bytes(bytes: Vec<u8>) -> Self {
         Page { buffer: bytes }
     }
-
-    /// Gets an integer value from the specified offset in the page.
+    
+    // TODO should avoid this copy
+    pub fn from_slice(bytes: &[u8]) -> Self {
+        let mut contents = vec![0; bytes.len()];
+        contents.copy_from_slice(bytes);
+        Page { buffer: contents }
+    }
     pub fn get_int(&self, offset: usize) -> i32 {
         let mut cursor = Cursor::new(&self.buffer[offset..offset + 4]);
         cursor.read_i32::<BigEndian>().unwrap()
     }
 
-    /// Sets an integer value at the specified offset in the page.
     pub fn set_int(&mut self, offset: usize, n: i32) {
         let mut cursor = Cursor::new(&mut self.buffer[offset..offset + 4]);
         cursor.write_i32::<BigEndian>(n).unwrap();
     }
 
-    /// Gets a byte array from the specified offset in the page.
-    /// The first 4 bytes at the offset specify the length of the array.
+    // TODO potentially avoid unneeded copy?
     pub fn get_bytes(&self, offset: usize) -> Vec<u8> {
         let length = self.get_int(offset) as usize;
         let start = offset + 4;
@@ -41,8 +42,6 @@ impl Page {
         self.buffer[start..end].to_vec()
     }
 
-    /// Sets a byte array at the specified offset in the page.
-    /// The length of the array is stored as an integer before the actual bytes.
     pub fn set_bytes(&mut self, offset: usize, bytes: &[u8]) {
         self.set_int(offset, bytes.len() as i32);
         let start = offset + 4;
@@ -50,25 +49,25 @@ impl Page {
         self.buffer[start..end].copy_from_slice(bytes);
     }
 
-    /// Gets a string from the specified offset in the page.
     pub fn get_string(&self, offset: usize) -> String {
         let bytes = self.get_bytes(offset);
         String::from_utf8_lossy(&bytes).to_string()
     }
 
-    /// Sets a string at the specified offset in the page.
     pub fn set_string(&mut self, offset: usize, s: &str) {
         self.set_bytes(offset, s.as_bytes());
     }
 
-    /// Returns a reference to the underlying buffer.
     pub fn contents(&self) -> &[u8] {
         &self.buffer
     }
     
-    /// Returns a mutable reference to the underlying buffer.
     pub fn contents_mut(&mut self) -> &mut [u8] {
         &mut self.buffer
+    }
+
+    pub fn max_length(strlen: usize) -> usize {
+        4 + strlen
     }
 }
 
@@ -94,15 +93,12 @@ mod tests {
     fn test_get_set_int() {
         let mut page = Page::new(100);
         
-        // Test setting and getting at offset 0
         page.set_int(0, 42);
         assert_eq!(page.get_int(0), 42);
         
-        // Test setting and getting at different offsets
         page.set_int(4, -123);
         assert_eq!(page.get_int(4), -123);
         
-        // Test max and min values
         page.set_int(8, i32::MAX);
         assert_eq!(page.get_int(8), i32::MAX);
         
@@ -115,17 +111,14 @@ mod tests {
         let mut page = Page::new(100);
         let test_data = vec![10, 20, 30, 40, 50];
         
-        // Test setting and getting bytes
         page.set_bytes(0, &test_data);
         let retrieved = page.get_bytes(0);
         assert_eq!(retrieved, test_data);
         
-        // Test with empty array
         let empty: Vec<u8> = vec![];
         page.set_bytes(20, &empty);
         assert_eq!(page.get_bytes(20), empty);
         
-        // Test with larger data
         let large_data: Vec<u8> = (0..50).collect();
         page.set_bytes(30, &large_data);
         assert_eq!(page.get_bytes(30), large_data);
