@@ -1,6 +1,8 @@
+use serde::{Serialize, Deserialize};
+
 /// Represents a block identifier in the SimpleDB system.
 /// Each block is identified by a filename and a block number.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct BlockId {
     filename: String,
     blknum: i32,

@@ -70,8 +70,8 @@ impl FileMgr {
 
     /// Appends a new block to the end of the specified file and returns its BlockId.
     pub fn append(&self, filename: &str) -> io::Result<BlockId> {
-        let newblknum = self.block_count(filename)?;
-        let blk = BlockId::new(filename.to_string(), newblknum);
+        let new_block_num = self.block_count(filename)?;
+        let blk = BlockId::new(filename.to_string(), new_block_num);
         
         let mut file = self.get_file(&blk.filename())?;
         let pos = blk.number() as u64 * self.block_size as u64;
@@ -103,12 +103,12 @@ impl FileMgr {
         let mut open_files = self.open_files.lock().unwrap();
         
         if !open_files.contains_key(filename) {
-            let filepath = self.db_directory.join(filename);
+            let file_path = self.db_directory.join(filename);
             let file = OpenOptions::new()
                 .read(true)
                 .write(true)
                 .create(true)
-                .open(filepath)?;
+                .open(file_path)?;
                 
             open_files.insert(filename.to_string(), file);
         }

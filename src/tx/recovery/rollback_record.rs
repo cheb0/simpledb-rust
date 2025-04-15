@@ -1,4 +1,14 @@
+use std::{any::Any, sync::Arc};
+
+use bincode::serialize;
+use serde::{Deserialize, Serialize};
+
+use crate::{buffer::buffer_mgr::BufferMgr, error::DbResult, log::LogMgr, storage::page::Page};
+
+use super::log_record::{LogRecord, ROLLBACK_FLAG};
+
 /// A rollback transaction log record.
+#[derive(Serialize, Deserialize)]
 pub struct RollbackRecord {
     tx_num: i32,
 }
@@ -13,16 +23,17 @@ impl RollbackRecord {
     pub fn create(tx_num: i32) -> Self {
         RollbackRecord { tx_num }
     }
-    
-    pub fn write_to_page(&self, page: &mut Page) {
-        page.set_int(0, ROLLBACK);
-        page.set_int(4, self.tx_num);
+
+    pub fn to_bytes(&self) -> DbResult<Vec<u8>> {
+        let mut result = vec![ROLLBACK_FLAG as u8];
+        result.extend(serialize(self)?);
+        Ok(result)
     }
 }
 
 impl LogRecord for RollbackRecord {
     fn op(&self) -> i32 {
-        ROLLBACK
+        ROLLBACK_FLAG
     }
 
     fn tx_number(&self) -> i32 {
@@ -31,6 +42,32 @@ impl LogRecord for RollbackRecord {
 
     fn undo(&self, _tx_num: i32, _buffer_mgr: &Arc<BufferMgr>) -> DbResult<()> {
         // Rollback records don't need to be undone
+        Ok(())
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tx::recovery::log_record::{create_log_record, LogRecord};
+
+    #[test]
+    fn test_rollback_record_serialization() -> crate::error::DbResult<()> {
+        let record = RollbackRecord::create(42);
+        let bytes = record.to_bytes()?;
+        
+        let deserialized = create_log_record(&bytes)?;
+        
+        assert_eq!(deserialized.op(), ROLLBACK_FLAG);
+        assert_eq!(deserialized.tx_number(), 42);
+        
+        let rollback = (&*deserialized).as_any().downcast_ref::<RollbackRecord>()
+            .expect("Failed to downcast to RollbackRecord");
+        assert_eq!(rollback.tx_num, 42);
         Ok(())
     }
 }

@@ -1,5 +1,3 @@
-pub mod record;
-
 use std::io;
 use std::sync::{Arc, Mutex};
 
@@ -50,8 +48,8 @@ impl LogMgr {
     }
     
     // Helper method to append a new block to the log file
-    fn append_new_block(fm: &FileMgr, logfile: &str) -> io::Result<BlockId> {
-        let blk = fm.append(logfile)?;
+    fn append_new_block(fm: &FileMgr, log_file: &str) -> io::Result<BlockId> {
+        let blk = fm.append(log_file)?;
         let blocksize = fm.block_size();
         let mut logpage = Page::new(blocksize);
         logpage.set_int(0, blocksize as i32);
@@ -77,12 +75,12 @@ impl LogMgr {
     /// Appends a log record to the log.
     /// Returns the LSN (Log Sequence Number) of the appended record.
     /// This method is thread-safe.
-    pub fn append(&self, logrec: &[u8]) -> io::Result<i32> {
+    pub fn append(&self, record: &[u8]) -> io::Result<i32> {
         let mut inner = self.inner.lock().unwrap();
         
         let boundary = inner.logpage.get_int(0);
         
-        let rec_size: usize = logrec.len();
+        let rec_size: usize = record.len();
         let bytes_needed = rec_size + std::mem::size_of::<i32>();
         
         // Check if there's enough space in the current block
@@ -96,14 +94,14 @@ impl LogMgr {
             let recpos = boundary - bytes_needed as i32;
             
             // Write the record and update the boundary
-            inner.logpage.set_bytes(recpos as usize, logrec);
+            inner.logpage.set_bytes(recpos as usize, record);
             inner.logpage.set_int(0, recpos);
         } else {
             // Calculate position for the new record
             let recpos = boundary - bytes_needed as i32;
             
             // Write the record and update the boundary
-            inner.logpage.set_bytes(recpos as usize, logrec);
+            inner.logpage.set_bytes(recpos as usize, record);
             inner.logpage.set_int(0, recpos);
         }
         

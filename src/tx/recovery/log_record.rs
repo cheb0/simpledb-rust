@@ -1,18 +1,25 @@
 use std::sync::Arc;
+use std::any::Any;
 
-use crate::storage::page::Page;
+use bincode::deserialize;
+
 use crate::buffer::buffer_mgr::BufferMgr;
-use crate::storage::block_id::BlockId;
 use crate::error::DbResult;
 
-pub const CHECKPOINT: i32 = 0;
-pub const START: i32 = 1;
-pub const COMMIT: i32 = 2;
-pub const ROLLBACK: i32 = 3;
-pub const SETINT: i32 = 4;
-pub const SETSTRING: i32 = 5;
+use super::checkpoint_record::CheckpointRecord;
+use super::commit_record::CommitRecord;
+use super::rollback_record::RollbackRecord;
+use super::set_int_record::SetIntRecord;
+use super::set_string_record::SetStringRecord;
+use super::start_record::StartRecord;
 
-// TODO use serde or other idiomatic serialization framework
+pub const CHECKPOINT_FLAG: i32 = 0;
+pub const START_FLAG: i32 = 1;
+pub const COMMIT_FLAG: i32 = 2;
+pub const ROLLBACK_FLAG: i32 = 3;
+pub const SETINT_FLAG: i32 = 4;
+pub const SETSTRING_FLAG: i32 = 5;
+
 pub trait LogRecord: Send + Sync {
 
     fn op(&self) -> i32;
@@ -21,18 +28,21 @@ pub trait LogRecord: Send + Sync {
 
     /// Undoes the operation encoded by this log record.
     fn undo(&self, tx_num: i32, buffer_mgr: &Arc<BufferMgr>) -> DbResult<()>;
+
+    fn as_any(&self) -> &dyn Any;
 }
 
-pub fn create_log_record(bytes: &[u8]) -> Box<dyn LogRecord> {
-    let page = Page::from_slice(bytes);
+/// Creates a log record from bytes.
+pub fn create_log_record(bytes: &[u8]) -> DbResult<Box<dyn LogRecord>> {
+    let record_flag = bytes[0] as i32;
     
-    match page.get_int(0) {
-        CHECKPOINT => Box::new(CheckpointRecord {}),
-        START => Box::new(StartRecord::new(&page)),
-        COMMIT => Box::new(CommitRecord::new(&page)),
-        ROLLBACK => Box::new(RollbackRecord::new(&page)),
-        SETINT => Box::new(SetIntRecord::new(&page)),
-        SETSTRING => Box::new(SetStringRecord::new(&page)),
-        _ => panic!("Unknown log record type"),
+    match record_flag {
+        CHECKPOINT_FLAG => Ok(Box::new(deserialize::<CheckpointRecord>(&bytes[1..])?)),
+        START_FLAG => Ok(Box::new(deserialize::<StartRecord>(&bytes[1..])?)),
+        COMMIT_FLAG => Ok(Box::new(deserialize::<CommitRecord>(&bytes[1..])?)),
+        ROLLBACK_FLAG => Ok(Box::new(deserialize::<RollbackRecord>(&bytes[1..])?)),
+        SETINT_FLAG => Ok(Box::new(deserialize::<SetIntRecord>(&bytes[1..])?)),
+        SETSTRING_FLAG => Ok(Box::new(deserialize::<SetStringRecord>(&bytes[1..])?)),
+        _ => Err(crate::error::DbError::Schema(format!("Unknown log record type: {}", record_flag))),
     }
 }

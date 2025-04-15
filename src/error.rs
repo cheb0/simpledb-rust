@@ -1,4 +1,5 @@
 use thiserror::Error;
+use bincode;
 
 #[derive(Error, Debug)]
 pub enum DbError {
@@ -19,6 +20,15 @@ pub enum DbError {
     
     #[error("Schema exception: {0}")]
     Schema(String),
+    
+    #[error("Serialization error: {0}")]
+    Serialization(String),
+}
+
+impl From<bincode::Error> for DbError {
+    fn from(err: bincode::Error) -> Self {
+        DbError::Serialization(err.to_string())
+    }
 }
 
 pub type DbResult<T> = std::result::Result<T, DbError>; 

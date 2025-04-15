@@ -8,25 +8,25 @@ use crate::storage::page::Page;
 
 /// Represents a buffer, which is a memory region that contains a disk block.
 pub struct Buffer {
-    fm: Arc<FileMgr>,
-    lm: Arc<LogMgr>,
+    file_mgr: Arc<FileMgr>,
+    log_mgr: Arc<LogMgr>,
     contents: Page,
-    blk: Option<BlockId>,
+    block_id: Option<BlockId>,
     pins: i32,
-    txnum: i32,
+    tx_num: i32,
     lsn: i32,
 }
 
 impl Buffer {
-    pub fn new(fm: Arc<FileMgr>, lm: Arc<LogMgr>) -> Self {
-        let blocksize = fm.block_size();
+    pub fn new(file_mgr: Arc<FileMgr>, log_mgr: Arc<LogMgr>) -> Self {
+        let block_size = file_mgr.block_size();
         Buffer {
-            fm,
-            lm,
-            contents: Page::new(blocksize),
-            blk: None,
+            file_mgr,
+            log_mgr,
+            contents: Page::new(block_size),
+            block_id: None,
             pins: 0,
-            txnum: -1,
+            tx_num: -1,
             lsn: -1,
         }
     }
@@ -40,11 +40,11 @@ impl Buffer {
     }
 
     pub fn block(&self) -> Option<&BlockId> {
-        self.blk.as_ref()
+        self.block_id.as_ref()
     }
 
     pub fn set_modified(&mut self, txnum: i32, lsn: i32) {
-        self.txnum = txnum;
+        self.tx_num = txnum;
         if lsn >= 0 {
             self.lsn = lsn;
         }
@@ -55,7 +55,7 @@ impl Buffer {
     }
 
     pub fn modifying_tx(&self) -> i32 {
-        self.txnum
+        self.tx_num
     }
 
     /// Assigns this buffer to the specified block.
@@ -63,19 +63,19 @@ impl Buffer {
     /// that block is written to disk.
     pub fn assign_to_block(&mut self, blk: BlockId) -> io::Result<()> {
         self.flush()?;
-        self.blk = Some(blk.clone());
-        self.fm.read(&blk, &mut self.contents)?;
+        self.block_id = Some(blk.clone());
+        self.file_mgr.read(&blk, &mut self.contents)?;
         self.pins = 0;
         Ok(())
     }
 
     pub fn flush(&mut self) -> io::Result<()> {
-        if self.txnum >= 0 {
-            self.lm.flush(self.lsn)?;
-            if let Some(blk) = &self.blk {
-                self.fm.write(blk, &self.contents)?;
+        if self.tx_num >= 0 {
+            self.log_mgr.flush(self.lsn)?;
+            if let Some(blk) = &self.block_id {
+                self.file_mgr.write(blk, &self.contents)?;
             }
-            self.txnum = -1;
+            self.tx_num = -1;
         }
         Ok(())
     }

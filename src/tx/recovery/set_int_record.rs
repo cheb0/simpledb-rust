@@ -1,9 +1,20 @@
+use std::sync::Arc;
+use std::any::Any;
+
+use bincode::serialize;
+use serde::{Deserialize, Serialize};
+
+use crate::{buffer::buffer_mgr::BufferMgr, error::DbResult, storage::{block_id::BlockId, page::Page}};
+
+use super::log_record::{LogRecord, SETINT_FLAG};
+
 /// A set integer log record.
+#[derive(Serialize, Deserialize)]
 pub struct SetIntRecord {
-    tx_num: i32,
-    offset: i32,
-    val: i32,
-    blk: BlockId,
+    pub tx_num: i32,
+    pub offset: i32,
+    pub val: i32,
+    pub blk: BlockId,
 }
 
 impl SetIntRecord {
@@ -30,21 +41,17 @@ impl SetIntRecord {
             blk,
         }
     }
-    
-    pub fn write_to_page(&self, page: &mut Page) {
-        page.set_int(0, SETINT);
-        page.set_int(4, self.tx_num);
-        page.set_string(8, &self.blk.filename());
-        let pos = 8 + Page::max_length(self.blk.filename().len());
-        page.set_int(pos, self.blk.number());
-        page.set_int(pos + 4, self.offset);
-        page.set_int(pos + 8, self.val);
+
+    pub fn to_bytes(&self) -> DbResult<Vec<u8>> {
+        let mut result = vec![SETINT_FLAG as u8];
+        result.extend(serialize(self)?);
+        Ok(result)
     }
 }
 
 impl LogRecord for SetIntRecord {
     fn op(&self) -> i32 {
-        SETINT
+        SETINT_FLAG
     }
 
     fn tx_number(&self) -> i32 {
@@ -52,6 +59,38 @@ impl LogRecord for SetIntRecord {
     }
 
     fn undo(&self, tx_num: i32, buffer_mgr: &Arc<BufferMgr>) -> DbResult<()> {
+        Ok(())
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tx::recovery::log_record::{create_log_record, LogRecord};
+    use crate::storage::block_id::BlockId;
+
+    #[test]
+    fn test_set_int_record_serialization() -> crate::error::DbResult<()> {
+        let blk = BlockId::new("testfile".to_string(), 42);
+        let record = SetIntRecord::create(101, blk, 16, 9999);
+        let bytes = record.to_bytes()?;
+        
+        let deserialized = create_log_record(&bytes)?;
+        
+        assert_eq!(deserialized.op(), SETINT_FLAG);
+        assert_eq!(deserialized.tx_number(), 101);
+        
+        let set_int = (&*deserialized).as_any().downcast_ref::<SetIntRecord>()
+            .expect("Failed to downcast to SetIntRecord");
+        assert_eq!(set_int.tx_num, 101);
+        assert_eq!(set_int.offset, 16);
+        assert_eq!(set_int.val, 9999);
+        assert_eq!(set_int.blk.filename(), "testfile");
+        assert_eq!(set_int.blk.number(), 42);
         Ok(())
     }
 }

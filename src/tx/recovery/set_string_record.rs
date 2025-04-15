@@ -1,3 +1,13 @@
+use std::{any::Any, sync::Arc};
+
+use bincode::serialize;
+use serde::{Deserialize, Serialize};
+
+use crate::{buffer::buffer_mgr::BufferMgr, error::DbResult, storage::{block_id::BlockId, page::Page}};
+
+use super::log_record::{LogRecord, SETSTRING_FLAG};
+
+#[derive(Serialize, Deserialize)]
 pub struct SetStringRecord {
     tx_num: i32,
     offset: i32,
@@ -22,9 +32,26 @@ impl SetStringRecord {
     }
 }
 
+impl SetStringRecord {
+    pub fn create(tx_num: i32, blk: BlockId, offset: i32, val: String) -> Self {
+        SetStringRecord {
+            tx_num,
+            offset,
+            val,
+            blk,
+        }
+    }
+
+    pub fn to_bytes(&self) -> DbResult<Vec<u8>> {
+        let mut result = vec![SETSTRING_FLAG as u8];
+        result.extend(serialize(self)?);
+        Ok(result)
+    }
+}
+
 impl LogRecord for SetStringRecord {
     fn op(&self) -> i32 {
-        SETSTRING
+        SETSTRING_FLAG
     }
 
     fn tx_number(&self) -> i32 {
@@ -35,25 +62,39 @@ impl LogRecord for SetStringRecord {
         // TODO
         Ok(())
     }
+    
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
-impl SetStringRecord {
-    pub fn create(tx_num: i32, blk: BlockId, offset: i32, val: String) -> Self {
-        SetStringRecord {
-            tx_num,
-            offset,
-            val,
-            blk,
-        }
-    }
-    
-    pub fn write_to_page(&self, page: &mut Page) {
-        page.set_int(0, SETSTRING);
-        page.set_int(4, self.tx_num);
-        page.set_string(8, &self.blk.filename());
-        let pos = 8 + Page::max_length(self.blk.filename().len());
-        page.set_int(pos, self.blk.number());
-        page.set_int(pos + 4, self.offset);
-        page.set_string(pos + 8, &self.val);
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tx::recovery::log_record::{create_log_record, LogRecord};
+    use crate::storage::block_id::BlockId;
+
+    #[test]
+    fn test_set_string_record_serialization() -> crate::error::DbResult<()> {
+        let blk = BlockId::new("datafile".to_string(), 123);
+        let test_string = "Hello, world!".to_string();
+        let record = SetStringRecord::create(202, blk, 32, test_string.clone());
+        let bytes = record.to_bytes()?;
+        
+        let deserialized = create_log_record(&bytes)?;
+        
+        assert_eq!(deserialized.op(), SETSTRING_FLAG);
+        assert_eq!(deserialized.tx_number(), 202);
+        
+        let set_string = (&*deserialized).as_any().downcast_ref::<SetStringRecord>()
+            .expect("Failed to downcast to SetStringRecord");
+        
+        assert_eq!(set_string.tx_num, 202);
+        assert_eq!(set_string.offset, 32);
+        assert_eq!(set_string.val, test_string);
+        assert_eq!(set_string.blk.filename(), "datafile");
+        assert_eq!(set_string.blk.number(), 123);
+        
+        Ok(())
     }
 }
