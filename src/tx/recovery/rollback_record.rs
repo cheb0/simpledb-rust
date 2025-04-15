@@ -7,7 +7,6 @@ use crate::{buffer::buffer_mgr::BufferMgr, error::DbResult, log::LogMgr, storage
 
 use super::log_record::{LogRecord, ROLLBACK_FLAG};
 
-/// A rollback transaction log record.
 #[derive(Serialize, Deserialize)]
 pub struct RollbackRecord {
     tx_num: i32,

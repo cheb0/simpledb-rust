@@ -9,7 +9,7 @@ mod tx;
 
 fn main() {
     let blk = BlockId::new("asfjdsf".to_string(), 64544);
-    let record = SetIntRecord::create(6, blk, 7, 2);
+    let record = SetIntRecord::new(6, blk, 7, 2);
     let bytes = record.to_bytes().unwrap();
     println!("res len: {}", bytes.len());
 

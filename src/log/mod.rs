@@ -6,7 +6,7 @@ use crate::storage::file_mgr::FileMgr;
 use crate::storage::page::Page;
 
 /// Manages the database log, which is used for recovery.
-/// This implementation is thread-safe.
+// It employs interrior mutability and also is thread-safe
 pub struct LogMgr {
     fm: Arc<FileMgr>,
     logfile: String,

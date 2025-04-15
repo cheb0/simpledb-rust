@@ -10,6 +10,7 @@ use crate::storage::file_mgr::FileMgr;
 use crate::log::LogMgr;
 
 /// Manages the buffer pool, which consists of a collection of Buffer objects.
+/// It employs interrior mutability and also is thread-safe
 /// TODO Current implementation is naive (and unsafe) and has lots of O(N) functions,
 /// need to implement LRU or FIFO and optimize it
 pub struct BufferMgr {

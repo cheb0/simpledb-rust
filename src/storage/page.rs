@@ -66,8 +66,8 @@ impl Page {
         &mut self.buffer
     }
 
-    pub fn max_length(strlen: usize) -> usize {
-        4 + strlen
+    pub fn max_length(str_len: usize) -> usize {
+        4 + str_len
     }
 }
 

@@ -16,24 +16,7 @@ pub struct SetStringRecord {
 }
 
 impl SetStringRecord {
-    pub fn new(page: &Page) -> Self {
-        let tx_num = page.get_int(4);
-        let filename = page.get_string(8);
-        let block_num = page.get_int(8 + Page::max_length(filename.len()));
-        let offset = page.get_int(12 + Page::max_length(filename.len()));
-        let val = page.get_string(16 + Page::max_length(filename.len()));
-        
-        SetStringRecord {
-            tx_num,
-            offset,
-            val,
-            blk: BlockId::new(filename, block_num),
-        }
-    }
-}
-
-impl SetStringRecord {
-    pub fn create(tx_num: i32, blk: BlockId, offset: i32, val: String) -> Self {
+    pub fn new(tx_num: i32, blk: BlockId, offset: i32, val: String) -> Self {
         SetStringRecord {
             tx_num,
             offset,
@@ -78,7 +61,7 @@ mod tests {
     fn test_set_string_record_serialization() -> crate::error::DbResult<()> {
         let blk = BlockId::new("datafile".to_string(), 123);
         let test_string = "Hello, world!".to_string();
-        let record = SetStringRecord::create(202, blk, 32, test_string.clone());
+        let record = SetStringRecord::new(202, blk, 32, test_string.clone());
         let bytes = record.to_bytes()?;
         
         let deserialized = create_log_record(&bytes)?;

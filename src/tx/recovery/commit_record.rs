@@ -14,13 +14,7 @@ pub struct CommitRecord {
 }
 
 impl CommitRecord {
-    pub fn new(page: &Page) -> Self {
-        CommitRecord {
-            tx_num: page.get_int(4),
-        }
-    }
-
-    pub fn create(tx_num: i32) -> Self {
+    pub fn new(tx_num: i32) -> Self {
         CommitRecord { tx_num }
     }
     
@@ -57,7 +51,7 @@ mod tests {
 
     #[test]
     fn test_commit_record_serialization() -> crate::error::DbResult<()> {
-        let record = CommitRecord::create(123);
+        let record = CommitRecord::new(123);
         let bytes = record.to_bytes()?;
         
         let deserialized = create_log_record(&bytes)?;
