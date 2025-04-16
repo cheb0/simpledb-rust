@@ -8,38 +8,38 @@ use crate::storage::page::Page;
 /// Manages the database log, which is used for recovery.
 // It employs interrior mutability and also is thread-safe
 pub struct LogMgr {
-    fm: Arc<FileMgr>,
-    logfile: String,
+    file_mgr: Arc<FileMgr>,
+    log_file: String,
     inner: Mutex<LogMgrInner>,
 }
 
 struct LogMgrInner {
-    logpage: Page,
+    log_page: Page,
     current_blk: BlockId,
     latest_lsn: i32,
     last_saved_lsn: i32,
 }
 
 impl LogMgr {
-    pub fn new(fm: Arc<FileMgr>, logfile: &str) -> io::Result<Self> {
-        let block_size = fm.block_size();
+    pub fn new(file_mgr: Arc<FileMgr>, log_file: &str) -> io::Result<Self> {
+        let block_size = file_mgr.block_size();
         let mut log_page = Page::new(block_size);
-        log_page.set_int(0, fm.block_size() as i32);
+        log_page.set_int(0, file_mgr.block_size() as i32);
         
-        let block_count = fm.block_count(logfile)?;
+        let block_count = file_mgr.block_count(log_file)?;
         let current_blk = if block_count == 0 {
-            Self::append_new_block(&fm, logfile)?
+            Self::append_new_block(&file_mgr, log_file)?
         } else {
-            let blk = BlockId::new(logfile.to_string(), block_count - 1);
-            fm.read(&blk, &mut log_page)?;
+            let blk = BlockId::new(log_file.to_string(), block_count - 1);
+            file_mgr.read(&blk, &mut log_page)?;
             blk
         };
         
         Ok(LogMgr {
-            fm,
-            logfile: logfile.to_string(),
+            file_mgr,
+            log_file: log_file.to_string(),
             inner: Mutex::new(LogMgrInner {
-                logpage: log_page,
+                log_page,
                 current_blk,
                 latest_lsn: 0,
                 last_saved_lsn: 0,
@@ -59,7 +59,7 @@ impl LogMgr {
     
     /// Writes the current log page to disk.
     fn flush_internal(&self, inner: &mut LogMgrInner) -> io::Result<()> {
-        self.fm.write(&inner.current_blk, &inner.logpage)?;
+        self.file_mgr.write(&inner.current_blk, &inner.log_page)?;
         inner.last_saved_lsn = inner.latest_lsn;
         Ok(())
     }
@@ -78,7 +78,7 @@ impl LogMgr {
     pub fn append(&self, record: &[u8]) -> io::Result<i32> {
         let mut inner = self.inner.lock().unwrap();
         
-        let boundary = inner.logpage.get_int(0);
+        let boundary = inner.log_page.get_int(0);
         
         let rec_size: usize = record.len();
         let bytes_needed = rec_size + std::mem::size_of::<i32>();
@@ -87,22 +87,22 @@ impl LogMgr {
         if (boundary - bytes_needed as i32) < std::mem::size_of::<i32>() as i32 {
             self.flush_internal(&mut inner)?;
             
-            inner.current_blk = Self::append_new_block(&self.fm, &self.logfile)?;
-            inner.logpage = Page::new(self.fm.block_size());
-            inner.logpage.set_int(0, self.fm.block_size() as i32);
-            let boundary = inner.logpage.get_int(0);
+            inner.current_blk = Self::append_new_block(&self.file_mgr, &self.log_file)?;
+            inner.log_page = Page::new(self.file_mgr.block_size());
+            inner.log_page.set_int(0, self.file_mgr.block_size() as i32);
+            let boundary = inner.log_page.get_int(0);
             let recpos = boundary - bytes_needed as i32;
             
             // Write the record and update the boundary
-            inner.logpage.set_bytes(recpos as usize, record);
-            inner.logpage.set_int(0, recpos);
+            inner.log_page.set_bytes(recpos as usize, record);
+            inner.log_page.set_int(0, recpos);
         } else {
             // Calculate position for the new record
             let recpos = boundary - bytes_needed as i32;
             
             // Write the record and update the boundary
-            inner.logpage.set_bytes(recpos as usize, record);
-            inner.logpage.set_int(0, recpos);
+            inner.log_page.set_bytes(recpos as usize, record);
+            inner.log_page.set_int(0, recpos);
         }
         
         inner.latest_lsn += 1;
@@ -114,27 +114,27 @@ impl LogMgr {
     pub fn iterator(&self) -> io::Result<LogIterator> {
         let mut inner = self.inner.lock().unwrap();
         self.flush_internal(&mut inner)?;
-        LogIterator::new(&self.fm, inner.current_blk.clone())
+        LogIterator::new(&self.file_mgr, inner.current_blk.clone())
     }
 }
 
 /// An iterator over log records, starting from the most recent and moving backwards.
 pub struct LogIterator<'a> {
-    fm: &'a Arc<FileMgr>,
+    file_mgr: &'a Arc<FileMgr>,
     blk: BlockId,
     page: Page,
-    currentpos: usize,
+    current_pos: usize,
     boundary: usize,
 }
 
 impl<'a> LogIterator<'a> {
-    fn new(fm: &'a Arc<FileMgr>, blk: BlockId) -> io::Result<Self> {
-        let mut page = Page::new(fm.block_size());
+    fn new(file_mgr: &'a Arc<FileMgr>, blk: BlockId) -> io::Result<Self> {
+        let mut page = Page::new(file_mgr.block_size());
         let mut iter = LogIterator {
-            fm,
+            file_mgr,
             blk: blk.clone(),
             page,
-            currentpos: 0,
+            current_pos: 0,
             boundary: 0,
         };
         iter.move_to_block(&blk)?;
@@ -142,27 +142,27 @@ impl<'a> LogIterator<'a> {
     }
     
     fn move_to_block(&mut self, blk: &BlockId) -> io::Result<()> {
-        self.fm.read(blk, &mut self.page)?;
+        self.file_mgr.read(blk, &mut self.page)?;
         self.boundary = self.page.get_int(0) as usize;
-        self.currentpos = self.boundary;
+        self.current_pos = self.boundary;
         Ok(())
     }
     
     pub fn has_next(&self) -> bool {
-        self.currentpos < self.fm.block_size() || self.blk.number() > 0
+        self.current_pos < self.file_mgr.block_size() || self.blk.number() > 0
     }
     
     pub fn next(&mut self) -> io::Result<Vec<u8>> {
-        if self.currentpos == self.fm.block_size() {
-            let new_blk = BlockId::new(self.blk.filename().to_string(), self.blk.number() - 1);
+        if self.current_pos == self.file_mgr.block_size() {
+            let new_blk = BlockId::new(self.blk.file_name().to_string(), self.blk.number() - 1);
             self.blk = new_blk.clone();
             self.move_to_block(&new_blk)?;
         }
         
-        let rec = self.page.get_bytes(self.currentpos);
-        self.currentpos += std::mem::size_of::<i32>() + rec.len();
+        let record_bytes = self.page.get_bytes(self.current_pos);
+        self.current_pos += std::mem::size_of::<i32>() + record_bytes.len();
         
-        Ok(rec)
+        Ok(record_bytes)
     }
 }
 
@@ -186,18 +186,18 @@ mod tests {
     #[test]
     fn test_log_manager_basic() -> io::Result<()> {
         let temp_dir = tempdir()?;
-        let fm: Arc<FileMgr> = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
-        let log_mgr = LogMgr::new(Arc::clone(&fm), "testlog")?;
+        let file_mgr: Arc<FileMgr> = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
+        let log_mgr = LogMgr::new(Arc::clone(&file_mgr), "testlog")?;
         
-        let test_rec = b"This is a test log record";
-        let lsn = log_mgr.append(test_rec)?;
+        let test_record = b"This is a test log record";
+        let lsn = log_mgr.append(test_record)?;
         assert_eq!(lsn, 1); // First LSN should be 1
         
         // Retrieve the record using an iterator
         let mut iter = log_mgr.iterator()?;
         assert!(iter.has_next());
         let retrieved_rec: Vec<u8> = iter.next()?;
-        assert_eq!(retrieved_rec, test_rec);
+        assert_eq!(retrieved_rec, test_record);
         assert!(!iter.has_next());
         
         Ok(())
@@ -206,8 +206,8 @@ mod tests {
     #[test]
     fn test_log_manager_multiple_records() -> io::Result<()> {
         let temp_dir = tempdir()?;
-        let fm = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
-        let log_mgr = LogMgr::new(Arc::clone(&fm), "testlog")?;
+        let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
+        let log_mgr = LogMgr::new(Arc::clone(&file_mgr), "testlog")?;
         
         let records = vec![
             b"First log record".to_vec(),
@@ -245,8 +245,8 @@ mod tests {
     fn test_log_manager_block_boundary() -> io::Result<()> {
         let temp_dir = tempdir()?;
         let block_size = 100;
-        let fm = Arc::new(FileMgr::new(temp_dir.path(), block_size)?);
-        let log_mgr = LogMgr::new(Arc::clone(&fm), "testlog")?;
+        let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), block_size)?);
+        let log_mgr = LogMgr::new(Arc::clone(&file_mgr), "testlog")?;
         
         let mut records = Vec::new();
         for i in 0..1000 {

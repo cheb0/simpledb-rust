@@ -39,7 +39,7 @@ impl LogRecord for RollbackRecord {
         self.tx_num
     }
 
-    fn undo(&self, _tx_num: i32, _buffer_mgr: &Arc<BufferMgr>) -> DbResult<()> {
+    fn undo(&self, tx_num: i32, buffer_mgr: &Arc<BufferMgr>) -> DbResult<()> {
         // Rollback records don't need to be undone
         Ok(())
     }

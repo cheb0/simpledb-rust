@@ -28,16 +28,16 @@ struct BufferMgrInner {
 }
 
 impl BufferMgr {
-    pub fn new(fm: Arc<FileMgr>, lm: Arc<LogMgr>, numbuffs: usize) -> Self {
-        let mut buffers = Vec::with_capacity(numbuffs);
-        for _ in 0..numbuffs {
-            buffers.push(UnsafeCell::new(Buffer::new(Arc::clone(&fm), Arc::clone(&lm))));
+    pub fn new(file_mgr: Arc<FileMgr>, log_mgr: Arc<LogMgr>, buffer_count: usize) -> Self {
+        let mut buffers = Vec::with_capacity(buffer_count);
+        for _ in 0..buffer_count {
+            buffers.push(UnsafeCell::new(Buffer::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr))));
         }
         
         BufferMgr {
             inner: Mutex::new(BufferMgrInner {
-                pins: vec![0; numbuffs].into_boxed_slice(),
-                num_available: numbuffs,
+                pins: vec![0; buffer_count].into_boxed_slice(),
+                num_available: buffer_count,
             }),
             buffers: buffers.into_boxed_slice(),
             condvar: Condvar::new(),

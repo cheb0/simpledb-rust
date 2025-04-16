@@ -75,7 +75,7 @@ mod tests {
         assert_eq!(set_string.tx_num, 202);
         assert_eq!(set_string.offset, 32);
         assert_eq!(set_string.val, test_string);
-        assert_eq!(set_string.blk.filename(), "datafile");
+        assert_eq!(set_string.blk.file_name(), "datafile");
         assert_eq!(set_string.blk.number(), 123);
         
         Ok(())

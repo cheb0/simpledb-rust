@@ -73,7 +73,7 @@ mod tests {
         assert_eq!(set_int.tx_num, 101);
         assert_eq!(set_int.offset, 16);
         assert_eq!(set_int.val, 9999);
-        assert_eq!(set_int.blk.filename(), "testfile");
+        assert_eq!(set_int.blk.file_name(), "testfile");
         assert_eq!(set_int.blk.number(), 42);
         Ok(())
     }

@@ -4,6 +4,8 @@ use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use crate::error::{DbError, DbResult};
+
 use super::block_id::BlockId;
 use super::page::Page;
 
@@ -16,7 +18,7 @@ pub struct FileMgr {
 }
 
 impl FileMgr {
-    pub fn new<P: AsRef<Path>>(db_directory: P, block_size: usize) -> io::Result<Self> {
+    pub fn new<P: AsRef<Path>>(db_directory: P, block_size: usize) -> DbResult<Self> {
         let db_path = db_directory.as_ref().to_path_buf();
         let is_new = !db_path.exists();
 
@@ -45,7 +47,7 @@ impl FileMgr {
 
     /// Reads a block from disk into the provided page.
     pub fn read(&self, blk: &BlockId, page: &mut Page) -> io::Result<()> {
-        let mut file = self.get_file(&blk.filename())?;
+        let mut file = self.get_file(&blk.file_name())?;
         let pos = blk.number() as u64 * self.block_size as u64;
         file.seek(SeekFrom::Start(pos))?;
         
@@ -57,7 +59,7 @@ impl FileMgr {
 
     /// Writes a page to the specified block on disk.
     pub fn write(&self, blk: &BlockId, page: &Page) -> io::Result<()> {
-        let mut file = self.get_file(&blk.filename())?;
+        let mut file = self.get_file(&blk.file_name())?;
         let pos = blk.number() as u64 * self.block_size as u64;
         file.seek(SeekFrom::Start(pos))?;
         
@@ -73,7 +75,7 @@ impl FileMgr {
         let new_block_num = self.block_count(filename)?;
         let blk = BlockId::new(filename.to_string(), new_block_num);
         
-        let mut file = self.get_file(&blk.filename())?;
+        let mut file = self.get_file(&blk.file_name())?;
         let pos = blk.number() as u64 * self.block_size as u64;
         file.seek(SeekFrom::Start(pos))?;
         
@@ -186,16 +188,16 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let file_mgr = FileMgr::new(temp_dir.path(), 400).unwrap();
 
-        let filename = "testfile";
-        let blk1 = file_mgr.append(filename).unwrap();
+        let file_name = "testfile";
+        let blk1 = file_mgr.append(file_name).unwrap();
 
         let mut page1 = Page::new(400);
         page1.set_int(0, 42);
         page1.set_string(100, "Hello, SimpleDB!");
         page1.set_int(200, -54574);
 
-        file_mgr.append(filename).unwrap();
-        let blk2 = file_mgr.append(filename).unwrap();
+        file_mgr.append(file_name).unwrap();
+        let blk2 = file_mgr.append(file_name).unwrap();
 
         let mut page2 = Page::new(400);
         page2.set_string(0, "test string");

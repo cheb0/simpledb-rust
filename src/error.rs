@@ -31,4 +31,10 @@ impl From<bincode::Error> for DbError {
     }
 }
 
+/* impl From<std::io::Error> for DbError {
+    fn from(err: std::io::Error) -> Self {
+        DbError::Io(err)
+    }
+} */
+
 pub type DbResult<T> = std::result::Result<T, DbError>; 

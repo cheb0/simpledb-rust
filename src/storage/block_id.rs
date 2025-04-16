@@ -4,20 +4,20 @@ use serde::{Serialize, Deserialize};
 /// Each block is identified by a filename and a block number.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct BlockId {
-    filename: String,
-    blknum: i32,
+    file_name: String,
+    number: i32,
 }
 
 impl BlockId {
-    pub fn new(filename: String, blknum: i32) -> Self {
-        BlockId { filename, blknum }
+    pub fn new(file_name: String, num: i32) -> Self {
+        BlockId { file_name, number: num }
     }
     
-    pub fn filename(&self) -> &str {
-        &self.filename
+    pub fn file_name(&self) -> &str {
+        &self.file_name
     }
     
     pub fn number(&self) -> i32 {
-        self.blknum
+        self.number
     }
 } 
