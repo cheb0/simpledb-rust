@@ -179,12 +179,14 @@ impl Drop for LogMgr {
 
 #[cfg(test)]
 mod tests {
+    use crate::error::DbResult;
+
     use super::*;
     use std::sync::Arc;
     use tempfile::tempdir;
 
     #[test]
-    fn test_log_manager_basic() -> io::Result<()> {
+    fn test_log_manager_basic() -> DbResult<()> {
         let temp_dir = tempdir()?;
         let file_mgr: Arc<FileMgr> = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
         let log_mgr = LogMgr::new(Arc::clone(&file_mgr), "testlog")?;
@@ -204,7 +206,7 @@ mod tests {
     }
     
     #[test]
-    fn test_log_manager_multiple_records() -> io::Result<()> {
+    fn test_log_manager_multiple_records() -> DbResult<()> {
         let temp_dir = tempdir()?;
         let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
         let log_mgr = LogMgr::new(Arc::clone(&file_mgr), "testlog")?;
@@ -242,7 +244,7 @@ mod tests {
     }
     
     #[test]
-    fn test_log_manager_block_boundary() -> io::Result<()> {
+    fn test_log_manager_block_boundary() -> DbResult<()> {
         let temp_dir = tempdir()?;
         let block_size = 100;
         let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), block_size)?);
@@ -273,7 +275,7 @@ mod tests {
     }
     
     #[test]
-    fn test_log_manager_persistence() -> io::Result<()> {
+    fn test_log_manager_persistence() -> DbResult<()> {
         let temp_dir = tempdir()?;
         let fm = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
         let records = vec![
@@ -311,7 +313,7 @@ mod tests {
     }
 
     #[test]
-    fn test_log_manager_thread_safety() -> io::Result<()> {
+    fn test_log_manager_thread_safety() -> DbResult<()> {
         use std::thread;
         use std::sync::{Arc, Barrier};
 
