@@ -17,13 +17,14 @@ impl Page {
     pub fn from_bytes(bytes: Vec<u8>) -> Self {
         Page { buffer: bytes }
     }
-    
+
     // TODO should avoid this copy
     pub fn from_slice(bytes: &[u8]) -> Self {
         let mut contents = vec![0; bytes.len()];
         contents.copy_from_slice(bytes);
         Page { buffer: contents }
     }
+
     pub fn get_int(&self, offset: usize) -> i32 {
         let mut cursor = Cursor::new(&self.buffer[offset..offset + 4]);
         cursor.read_i32::<BigEndian>().unwrap()
