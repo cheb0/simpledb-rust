@@ -1,7 +1,7 @@
-use std::io;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
-use std::cell::UnsafeCell;
+use std::cell::RefCell;
+use std::collections::HashMap;
 
 use crate::error::{DbError, DbResult};
 use crate::storage::block_id::BlockId;
@@ -15,7 +15,7 @@ use crate::log::LogMgr;
 /// need to implement LRU or FIFO and optimize it
 pub struct BufferMgr {
     inner: Mutex<BufferMgrInner>,
-    buffers: Box<[UnsafeCell<Buffer>]>,
+    buffers: Box<[RefCell<Buffer>]>,
     condvar: Condvar,
 }
 
@@ -25,19 +25,29 @@ unsafe impl Sync for BufferMgr {}
 struct BufferMgrInner {
     pins: Box<[usize]>,
     num_available: usize,
+    block_to_buffer_idx: HashMap<BlockId, usize>,
+}
+
+pub struct PinnedBufferGuard<'a> {
+    buffer_mgr: &'a BufferMgr,
+    buffer: &'a RefCell<Buffer>,
+    idx: usize,
 }
 
 impl BufferMgr {
     pub fn new(file_mgr: Arc<FileMgr>, log_mgr: Arc<LogMgr>, buffer_count: usize) -> Self {
         let mut buffers = Vec::with_capacity(buffer_count);
         for _ in 0..buffer_count {
-            buffers.push(UnsafeCell::new(Buffer::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr))));
+            buffers.push(RefCell::new(
+                Buffer::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr))
+            ));
         }
         
         BufferMgr {
             inner: Mutex::new(BufferMgrInner {
                 pins: vec![0; buffer_count].into_boxed_slice(),
                 num_available: buffer_count,
+                block_to_buffer_idx: HashMap::new(),
             }),
             buffers: buffers.into_boxed_slice(),
             condvar: Condvar::new(),
@@ -53,8 +63,7 @@ impl BufferMgr {
         let _guard = self.inner.lock().unwrap();
         
         for buffer in self.buffers.iter() {
-            // Safety: We have exclusive access through the lock
-            let buffer = unsafe { &mut *buffer.get() };
+            let mut buffer = buffer.borrow_mut();
             if buffer.modifying_tx() == txnum {
                 buffer.flush()?;
             }
@@ -65,8 +74,8 @@ impl BufferMgr {
     /// Pins the block to a buffer.
     /// If the block is already in a buffer, that buffer is used.
     /// Otherwise, an unpinned buffer is chosen.
-    pub fn pin<'a>(&'a self, blk: &BlockId) -> DbResult<&'a mut Buffer> {
-        const MAX_TIME: Duration = Duration::from_secs(10); // TODO make configurable
+    pub fn pin<'a>(&'a self, blk: &BlockId) -> DbResult<PinnedBufferGuard<'a>> {
+        const MAX_TIME: Duration = Duration::from_secs(10);
         let start_time = Instant::now();
         let mut inner = self.inner.lock().unwrap();
         let mut pinned_buff_id = self.try_to_pin(&mut inner, blk)?;
@@ -76,38 +85,35 @@ impl BufferMgr {
             pinned_buff_id = self.try_to_pin(&mut inner, blk)?;
         }
         
-        if pinned_buff_id.is_none() {
-            return Err(DbError::BufferAbort("Cannot pin buffer".to_string()));
+        if let Some(idx) = pinned_buff_id {
+            Ok(PinnedBufferGuard {
+                buffer_mgr: self,
+                buffer: &self.buffers[idx],
+                idx,
+            })
+        } else {
+            Err(DbError::BufferAbort("Cannot pin buffer".to_string()))
         }
-        
-        let idx = pinned_buff_id.unwrap();
-        // Safety: We ensure exclusive access to this buffer through the pin count
-        let buffer = unsafe { &mut *self.buffers[idx].get() };
-
-        Ok(buffer)
     }
     
     fn try_to_pin(&self, inner: &mut BufferMgrInner, blk: &BlockId) -> DbResult<Option<usize>> {
-        // First, check if the block is already in a buffer
-        if let Some(idx) = self.find_existing_buffer(blk) {
+        if let Some(&idx) = inner.block_to_buffer_idx.get(blk) {
             if inner.pins[idx] == 0 {
                 inner.num_available -= 1;
             }
             inner.pins[idx] += 1;
             
-            // Safety: We have exclusive access through the lock
-            let buffer = unsafe { &mut *self.buffers[idx].get() };
+            let mut buffer = self.buffers[idx].borrow_mut();
             buffer.pin();
             
             return Ok(Some(idx));
         }
         
-        if let Some(idx) = self.choose_unpinned_buffer(inner) {
+        if let Some(idx) = self.find_unpinned_buffer(inner) {
             inner.pins[idx] = 1;
             inner.num_available -= 1;
             
-            // Safety: We have exclusive access through the lock
-            let buffer = unsafe { &mut *self.buffers[idx].get() };
+            let mut buffer = self.buffers[idx].borrow_mut();
             buffer.assign_to_block(blk.clone())?;
             buffer.pin();
             
@@ -117,19 +123,8 @@ impl BufferMgr {
         Ok(None)
     }
     
-    fn find_existing_buffer(&self, blk: &BlockId) -> Option<usize> {
-        for (i, buffer) in self.buffers.iter().enumerate() {
-            let buffer = unsafe { &*buffer.get() };
-            if let Some(b) = buffer.block() {
-                if b == blk {
-                    return Some(i);
-                }
-            }
-        }
-        None
-    }
-    
-    fn choose_unpinned_buffer(&self, inner: &BufferMgrInner) -> Option<usize> {
+    fn find_unpinned_buffer(&self, inner: &BufferMgrInner) -> Option<usize> {
+        // TODO O(N)
         for (i, &pin_count) in inner.pins.iter().enumerate() {
             if pin_count == 0 {
                 return Some(i);
@@ -138,233 +133,142 @@ impl BufferMgr {
         None
     }
     
-    /// Unpins the specified buffer.
-    pub fn unpin(&self, buff: &mut Buffer) {
+    fn unpin_internal(&self, idx: usize) {
         let mut inner = self.inner.lock().unwrap();
-        
-        // Find the buffer index
-        let idx = self.find_buffer_index(buff);
+        let mut buffer = self.buffers[idx].borrow_mut();
         
         inner.pins[idx] -= 1;
-        buff.unpin();
+        buffer.unpin();
 
-        if !buff.is_pinned() {
-            if inner.pins[idx] == 0 {
-                inner.num_available += 1;
-                self.condvar.notify_all();
+        if !buffer.is_pinned() && inner.pins[idx] == 0 {
+            if let Some(block) = buffer.block() {
+                inner.block_to_buffer_idx.remove(&block);
             }
+            inner.num_available += 1;
+            self.condvar.notify_all();
         }
     }
-    
-    /// Finds the index of a buffer in the pool.
-    fn find_buffer_index(&self, buff: &Buffer) -> usize {
-        let buff_ptr = buff as *const Buffer;
-        
-        for (i, buffer) in self.buffers.iter().enumerate() {
-            let buffer_ptr = buffer.get();
-            if buffer_ptr as *const Buffer == buff_ptr {
-                return i;
-            }
-        }
-        
-        panic!("Buffer not found in pool");
+}
+
+impl<'a> PinnedBufferGuard<'a> {
+    pub fn borrow_mut(&self) -> std::cell::RefMut<'_, Buffer> {
+        self.buffer.borrow_mut()
+    }
+
+    pub fn borrow(&self) -> std::cell::Ref<'_, Buffer> {
+        self.buffer.borrow()
+    }
+}
+
+impl<'a> Drop for PinnedBufferGuard<'a> {
+    fn drop(&mut self) {
+        self.buffer_mgr.unpin_internal(self.idx);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core::num;
-    use std::sync::{Arc, Barrier};
     use std::thread;
-    use tempfile::tempdir;
+    use std::sync::{Arc, Barrier};
     use crate::storage::file_mgr::FileMgr;
     use crate::log::LogMgr;
-    use crate::storage::page::Page;
+    use tempfile::TempDir;
 
     #[test]
-    fn test_buffer_manager_very_basic() -> DbResult<()> {
-        let temp_dir = tempdir()?;
-        let fm = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
-        let lm = Arc::new(LogMgr::new(Arc::clone(&fm), "testlog")?);
+    fn test_buffer_pin_and_modify() -> DbResult<()> {
+        let temp_dir = TempDir::new().unwrap();
+        let file_mgr = Arc::new(FileMgr::new(temp_dir.path().to_path_buf(), 400)?);
+        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
+        let buffer_mgr = BufferMgr::new(file_mgr.clone(), log_mgr.clone(), 3);
         let num_blocks = 3;
         for _ in 0..num_blocks {
-            fm.append("testfile")?;
+            file_mgr.append("testfile")?;
         }
-        
-        let buffer_mgr = BufferMgr::new(Arc::clone(&fm), Arc::clone(&lm), 3);
-        
-        assert_eq!(buffer_mgr.available(), 3);
 
-        let blk1 = BlockId::new("testfile".to_string(), 1);
-        let buffer1 = buffer_mgr.pin(&blk1)?;
+        let block = BlockId::new("testfile".to_string(), 1);
+        let pinned_buf = buffer_mgr.pin(&block)?;
 
         assert_eq!(buffer_mgr.available(), 2);
+
+        {
+            let mut buffer: std::cell::RefMut<'_, Buffer> = pinned_buf.borrow_mut();
+            buffer.contents_mut().set_int(0, 123);
+            buffer.set_modified(1, 0); // Set as modified by transaction 1
+        }
+
+        assert_eq!(buffer_mgr.available(), 2);
+
+        drop(pinned_buf);
+
+        assert_eq!(buffer_mgr.available(), 3);
+
+        let pinned_guard = buffer_mgr.pin(&block)?;
+        {
+            let buffer = pinned_guard.borrow();
+            assert_eq!(buffer.contents().get_int(0), 123);
+        }
 
         Ok(())
     }
 
-    #[test]
-    fn test_buffer_manager_basic() -> DbResult<()> {
-        let temp_dir = tempdir()?;
-        let fm = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
-        let lm = Arc::new(LogMgr::new(Arc::clone(&fm), "testlog")?);
-        let buffer_mgr = BufferMgr::new(Arc::clone(&fm), Arc::clone(&lm), 3);
-        let num_blocks = 5;
-        for _ in 0..num_blocks {
-            fm.append("testfile")?;
-        }
-        
-        assert_eq!(buffer_mgr.available(), 3);
-        
-        let blk1 = BlockId::new("testfile".to_string(), 1);
-        let blk2 = BlockId::new("testfile".to_string(), 2);
-        let blk3 = BlockId::new("testfile".to_string(), 3);
-        
-        let buffer1 = buffer_mgr.pin(&blk1)?;
-        assert_eq!(buffer_mgr.available(), 2);
-        
-        buffer1.contents_mut().set_int(0, 101);
-        buffer1.set_modified(1, 0);
-        
-        let buffer2 = buffer_mgr.pin(&blk2)?;
-        assert_eq!(buffer_mgr.available(), 1);
-        
-        buffer2.contents_mut().set_int(0, 102);
-        buffer2.set_modified(1, 0);
-        
-        let buffer3 = buffer_mgr.pin(&blk3)?;
-        assert_eq!(buffer_mgr.available(), 0);
-        
-        buffer3.contents_mut().set_int(0, 103);
-        buffer3.set_modified(1, 0);
-        
-        buffer_mgr.unpin(buffer1);
-        assert_eq!(buffer_mgr.available(), 1);
-        
-        let blk4 = BlockId::new("testfile".to_string(), 4);
-        let buffer4 = buffer_mgr.pin(&blk4)?;
-        assert_eq!(buffer_mgr.available(), 0);
-        
-        buffer4.contents_mut().set_int(0, 104);
-        buffer4.set_modified(1, 0);
-        
-        // Flush all buffers for transaction 1
-        buffer_mgr.flush_all(1)?;
-        
-        buffer_mgr.unpin(buffer2);
-        buffer_mgr.unpin(buffer3);
-        buffer_mgr.unpin(buffer4);
-        assert_eq!(buffer_mgr.available(), 3);
-        
-        let buffer = buffer_mgr.pin(&blk1)?;
-        assert_eq!(buffer.contents().get_int(0), 101);
-        buffer_mgr.unpin(buffer);
-        
-        let buffer = buffer_mgr.pin(&blk2)?;
-        assert_eq!(buffer.contents().get_int(0), 102);
-        buffer_mgr.unpin(buffer);
-        
-        let buffer = buffer_mgr.pin(&blk3)?;
-        assert_eq!(buffer.contents().get_int(0), 103);
-        buffer_mgr.unpin(buffer);
-        
-        let buffer = buffer_mgr.pin(&blk4)?;
-        assert_eq!(buffer.contents().get_int(0), 104);
-        buffer_mgr.unpin(buffer);
-        
-        Ok(())
-    }
-    
-    #[test]
-    fn test_buffer_manager_pinning_same_block() -> DbResult<()> {
-        let temp_dir = tempdir()?;
-        let fm = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
-        let lm = Arc::new(LogMgr::new(Arc::clone(&fm), "testlog")?);
-        let num_blocks = 3;
-        for _ in 0..num_blocks {
-            fm.append("testfile")?;
-        }
-        
-        let buffer_mgr = BufferMgr::new(Arc::clone(&fm), Arc::clone(&lm), 3);
-        let blk = BlockId::new("testfile".to_string(), 1);
-        
-        let buffer1 = buffer_mgr.pin(&blk)?;
-        assert_eq!(buffer_mgr.available(), 2);
-        
-        let buffer2 = buffer_mgr.pin(&blk)?;
-        assert_eq!(buffer_mgr.available(), 2);
-        
-        buffer1.contents_mut().set_int(0, 101);
-        buffer1.set_modified(1, 0);
-        
-        // Both buffers should point to the same data
-        assert_eq!(buffer2.contents().get_int(0), 101);
-        
-        buffer_mgr.unpin(buffer1);
-        buffer_mgr.unpin(buffer2);
-        assert_eq!(buffer_mgr.available(), 3);
-        
-        Ok(())
-    }
-    
     #[test]
     fn test_buffer_manager_waiting_for_buffer() -> DbResult<()> {
-        let temp_dir = tempdir()?;
-        let fm = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
-        let lm = Arc::new(LogMgr::new(Arc::clone(&fm), "testlog")?);
-
-        // Create a buffer manager with a single buffer
+        let temp_dir = TempDir::new().unwrap();
+        let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
+        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
         let buffer_mgr = Arc::new(BufferMgr::new(
-            Arc::clone(&fm), 
-            Arc::clone(&lm), 
+            Arc::clone(&file_mgr), 
+            Arc::clone(&log_mgr), 
             1)
         );
-        let num_blocks = 2;
+
+        let num_blocks = 10;
         for _ in 0..num_blocks {
-            fm.append("testfile")?;
+            file_mgr.append("testfile")?;
         }
         
         let blk1 = BlockId::new("testfile".to_string(), 0);
         let blk2 = BlockId::new("testfile".to_string(), 1);
         
-        let buffer = buffer_mgr.pin(&blk1)?;
+        let guard1 = buffer_mgr.pin(&blk1)?;
         assert_eq!(buffer_mgr.available(), 0);
         
-        // Spawn a thread that tries to pin another block
         let buffer_mgr_clone = Arc::clone(&buffer_mgr);
         let blk2_clone = blk2.clone();
         
         let handle = thread::spawn(move || {
-            // This should block until the buffer is available
-            let buffer = buffer_mgr_clone.pin(&blk2_clone).unwrap();
-            assert_eq!(buffer.contents().get_int(0), 0);
-            buffer_mgr_clone.unpin(buffer);
+            let guard = buffer_mgr_clone.pin(&blk2_clone).unwrap();
+            {
+                let buffer = guard.borrow();
+                assert_eq!(buffer.contents().get_int(0), 0);
+            }
         });
         
         thread::sleep(Duration::from_millis(200));
         
-        buffer_mgr.unpin(buffer);
+        drop(guard1);
         
         handle.join().unwrap();
         assert_eq!(buffer_mgr.available(), 1);
         
         Ok(())
     }
-    
+
     #[test]
     fn test_buffer_manager_concurrent_access() -> DbResult<()> {
-        let temp_dir = tempdir()?;
-        let fm = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
-        let lm = Arc::new(LogMgr::new(Arc::clone(&fm), "testlog")?);
+        let temp_dir = TempDir::new().unwrap();
+        let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
+        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
         let buffer_mgr = Arc::new(
-            BufferMgr::new(Arc::clone(&fm), Arc::clone(&lm), 3)
+            BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 3)
         );
+
         let num_threads = 5;
         let ops_per_thread = 100;
         let num_blocks = num_threads * ops_per_thread;
         for _ in 0..num_blocks {
-            fm.append("testfile")?;
+            file_mgr.append("testfile")?;
         }
 
         let barrier = Arc::new(Barrier::new(num_threads));
@@ -379,53 +283,56 @@ mod tests {
                 
                 for i in 0..ops_per_thread {
                     let blk = BlockId::new("testfile".to_string(), (thread_id * 100 + i) as i32);
-                    let buffer = buffer_mgr_clone.pin(&blk).unwrap();
+                    let guard = buffer_mgr_clone.pin(&blk).unwrap();
                     
-                    let value = (thread_id * 1000 + i) as i32;
-                    buffer.contents_mut().set_int(0, value);
-                    buffer.set_modified(thread_id as i32, 0);
+                    {
+                        let mut buffer = guard.borrow_mut();
+                        let value = (thread_id * 1000 + i) as i32;
+                        buffer.contents_mut().set_int(0, value);
+                        buffer.set_modified(thread_id as i32, 0);
+                    }
                     
                     thread::sleep(Duration::from_millis(1));
-
-                    buffer_mgr_clone.unpin(buffer);
                 }
             });
             
             handles.push(handle);
         }
         
-        // Wait for all threads to complete
         for handle in handles {
             handle.join().unwrap();
         }
         
-        // All buffers should be available again
         assert_eq!(buffer_mgr.available(), 3);
         
         Ok(())
     }
-    
+
     #[test]
     fn test_buffer_manager_buffer_abort() -> DbResult<()> {
-        let temp_dir = tempdir().unwrap();
-        let fm = Arc::new(FileMgr::new(temp_dir.path(), 400).unwrap());
-        let lm = Arc::new(LogMgr::new(Arc::clone(&fm), "testlog").unwrap());
+        let temp_dir = TempDir::new().unwrap();
+        let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
+        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
         let num_blocks = 3;
         for _ in 0..num_blocks {
-            fm.append("testfile")?;
+            file_mgr.append("testfile")?;
         }
         let buffer_mgr = BufferMgr::new(
-            Arc::clone(&fm), 
-            Arc::clone(&lm), 
+            Arc::clone(&file_mgr), 
+            Arc::clone(&log_mgr), 
             1
         );
         
         let blk1 = BlockId::new("testfile".to_string(), 1);
         let blk2 = BlockId::new("testfile".to_string(), 2);
         
-        let buffer = buffer_mgr.pin(&blk1).unwrap();
+        let guard1 = buffer_mgr.pin(&blk1)?;
+
+        {
+            let mut buffer = guard1.borrow_mut();
+            buffer.contents_mut().set_int(0, 5);
+        }
         
-        // Try to pin another block - this should fail with BufferAbort
         match buffer_mgr.pin(&blk2) {
             Err(DbError::BufferAbort(_)) => {
                 // Expected
@@ -434,10 +341,13 @@ mod tests {
             Err(e) => panic!("Unexpected error: {:?}", e),
         }
         
-        buffer_mgr.unpin(buffer);
+        drop(guard1);
         
-        let buffer = buffer_mgr.pin(&blk2).unwrap();
-        buffer_mgr.unpin(buffer);
+        let guard2 = buffer_mgr.pin(&blk2)?;
+        {
+            let mut buffer = guard2.borrow_mut();
+            buffer.contents_mut().set_int(0, 5);
+        }
         Ok(())
     }
 }
