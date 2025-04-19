@@ -14,14 +14,14 @@ use super::set_string_record::SetStringRecord;
 use super::start_record::StartRecord;
 
 /// Manages the recovery process for a transaction.
-pub struct RecoveryMgr {
+pub struct RecoveryMgr<'a> {
     log_mgr: Arc<LogMgr>,
-    buffer_mgr: Arc<BufferMgr>,
+    buffer_mgr: &'a BufferMgr,
     tx_num: i32,
 }
 
-impl RecoveryMgr {
-    pub fn new(tx_num: i32, log_mgr: Arc<LogMgr>, buffer_mgr: Arc<BufferMgr>) -> DbResult<Self> {
+impl<'a> RecoveryMgr<'a> {
+    pub fn new(tx_num: i32, log_mgr: Arc<LogMgr>, buffer_mgr: &'a BufferMgr) -> DbResult<Self> {
         let start_record = StartRecord::create(tx_num);
         let bytes = start_record.to_bytes()?;
         log_mgr.append(&bytes)?;
@@ -35,7 +35,7 @@ impl RecoveryMgr {
     
     /// Commits the current transaction.
     pub fn commit(&self) -> DbResult<()> {
-        // Flush all modified buffers for this transaction
+/*         // Flush all modified buffers for this transaction
         self.buffer_mgr.flush_all(self.tx_num)?;
         
         let commit_record = CommitRecord::new(self.tx_num);
@@ -43,32 +43,32 @@ impl RecoveryMgr {
         let lsn = self.log_mgr.append(&bytes)?;
         
         // Flush the log to ensure the commit record is persisted
-        self.log_mgr.flush(lsn)?;
+        self.log_mgr.flush(lsn)?; */
         Ok(())
     }
     
     /// Rolls back the current transaction.
     pub fn rollback(&self) -> DbResult<()> {
-        self.buffer_mgr.flush_all(self.tx_num)?;
+/*         self.buffer_mgr.flush_all(self.tx_num)?;
         
         let rollback_record = RollbackRecord::create(self.tx_num);
         let bytes = rollback_record.to_bytes()?;
         let lsn = self.log_mgr.append(&bytes)?;
         
-        self.log_mgr.flush(lsn)?;
+        self.log_mgr.flush(lsn)?; */
         Ok(())
     }
     
     /// Recovers the database after a crash.
     pub fn recover(&self) -> DbResult<()> {
-        // Flush all modified buffers for this transaction
+/*         // Flush all modified buffers for this transaction
         self.buffer_mgr.flush_all(self.tx_num)?;
         
         let checkpoint_record = CheckpointRecord {};
         let bytes = checkpoint_record.to_bytes()?;
         let lsn = self.log_mgr.append(&bytes)?;
         
-        self.log_mgr.flush(lsn)?;
+        self.log_mgr.flush(lsn)?; */
         
         Ok(())
     }

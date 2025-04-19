@@ -3,6 +3,9 @@ use bincode;
 
 #[derive(Error, Debug)]
 pub enum DbError {
+    #[error("TODO: {0}")]
+    General(String),
+
     #[error("Buffer abort exception: {0}")]
     BufferAbort(String),
     
