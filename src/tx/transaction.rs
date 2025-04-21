@@ -29,26 +29,24 @@ impl<'a> Transaction<'a> {
             Arc::clone(&log_mgr), 
             buffer_mgr)
             .expect("fail"); // TODO
-        let mybuffers = BufferList::new(&buffer_mgr);
+        let buffers = BufferList::new(&buffer_mgr);
 
         Transaction {
             recovery_mgr,
             buffer_mgr,
             file_mgr,
             txnum,
-            buffers: mybuffers,
+            buffers,
         }
     }
 
     pub fn commit(&mut self) {
         self.recovery_mgr.commit();
-        println!("transaction {} committed", self.txnum);
         self.buffers.unpin_all();
     }
 
     pub fn rollback(&mut self) {
         self.recovery_mgr.rollback();
-        println!("transaction {} rolled back", self.txnum);
         self.buffers.unpin_all();
     }
 
@@ -62,35 +60,36 @@ impl<'a> Transaction<'a> {
 
     pub fn get_int(&self, blk: &BlockId, offset: usize) -> DbResult<i32> {
         let guard = self.buffers.get_buffer(blk)
-            .ok_or_else(|| DbError::General("Buffer not found".into()))?;
+            .ok_or_else(|| DbError::BufferNotFound(blk.clone()))?;
         let buffer = guard.borrow();
         Ok(buffer.contents().get_int(offset))
     }
 
     pub fn get_string(&self, blk: &BlockId, offset: usize) -> DbResult<String> {
         let guard = self.buffers.get_buffer(blk)
-            .ok_or_else(|| DbError::General("Buffer not found".into()))?;
+            .ok_or_else(|| DbError::BufferNotFound(blk.clone()))?;
         let buffer = guard.borrow();
         Ok(buffer.contents().get_string(offset))
     }
 
-    pub fn set_int(&self, blk: &BlockId, offset: usize, val: i32, ok_to_log: bool) -> DbResult<()> {
+    pub fn set_int(&self, blk: &BlockId, offset: usize, val: i32, log: bool) -> DbResult<()> {
         let guard = self.buffers.get_buffer(blk)
-            .ok_or_else(|| DbError::General("Buffer not found".into()))?;
+            .ok_or_else(|| DbError::BufferNotFound(blk.clone()))?;
+
         let mut buffer = guard.borrow_mut();
         
-        let lsn = if ok_to_log {
-            self.recovery_mgr.set_int(&mut buffer, offset, val)?
-        } else {
-            -1
-        };
+        if log {
+            let lsn = self.recovery_mgr.set_int(&mut buffer, offset, val)?;
+            buffer.set_modified(self.txnum, lsn);
+        }
 
         buffer.contents_mut().set_int(offset, val);
-        buffer.set_modified(self.txnum, lsn);
+        
         Ok(())
     }
 
-/*     pub fn set_string(&self, blk: &BlockId, offset: usize, val: String, ok_to_log: bool) -> DbResult<()> {
+/*
+    pub fn set_string(&self, blk: &BlockId, offset: usize, val: String, ok_to_log: bool) -> DbResult<()> {
         let guard = self.mybuffers.get_buffer(blk)
             .ok_or_else(|| DbError::General("Buffer not found".into()))?;
         let mut buffer = guard.borrow_mut();
@@ -104,16 +103,17 @@ impl<'a> Transaction<'a> {
         buffer.contents_mut().set_string(offset, &val);
         buffer.set_modified(self.txnum, lsn);
         Ok(())
-    } */
+    }    
+*/
 
-/*     pub fn size(&self, filename: &str) -> DbResult<u64> {
-        let dummy_blk = BlockId::new(filename.to_string(), END_OF_FILE);
-        Ok(self.file_mgr.block_count(filename)?)
-    } */
+     pub fn size(&self, file_name: &str) -> DbResult<i32> {
+        let dummy_blk = BlockId::new(file_name.to_string(), END_OF_FILE);
+        Ok(self.file_mgr.block_count(file_name)?)
+    }
 
-    pub fn append(&self, filename: &str) -> BlockId {
-        let dummy_blk = BlockId::new(filename.to_string(), END_OF_FILE);
-        self.file_mgr.append(filename).unwrap()
+    pub fn append(&self, file_name: &str) -> BlockId {
+        let dummy_blk: BlockId = BlockId::new(file_name.to_string(), END_OF_FILE);
+        self.file_mgr.append(file_name).unwrap()
     }
 
     pub fn block_size(&self) -> usize {
@@ -136,15 +136,12 @@ mod tests {
         let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
         let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
         let buffer_mgr = Arc::new(BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 3));
-
         let mut tx = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr);
         
-        // Create a block and write some data
         let blk = tx.append("testfile");
         tx.pin(blk.clone())?;
         tx.set_int(&blk, 0, 123, true)?;
         
-        // Read it back
         let val = tx.get_int(&blk, 0)?;
         assert_eq!(val, 123);
         

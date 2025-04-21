@@ -74,9 +74,9 @@ impl<'a> RecoveryMgr<'a> {
     }
     
     /// Logs a modification to an integer value in a buffer.
-    pub fn set_int(&self, buff: &mut Buffer, offset: usize, new_val: i32) -> DbResult<i32> {
-        let old_val = buff.contents().get_int(offset);
-        let blk = buff.block().expect("Buffer has no block assigned");
+    pub fn set_int(&self, buffer: &mut Buffer, offset: usize, new_val: i32) -> DbResult<i32> {
+        let old_val = buffer.contents().get_int(offset);
+        let blk = buffer.block().expect("Buffer has no block assigned");
         
         let set_int_record = SetIntRecord::new(self.tx_num, blk.clone() /* TODO do something with this */, offset as i32, old_val);
         let bytes = set_int_record.to_bytes()?;

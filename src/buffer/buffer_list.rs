@@ -71,24 +71,19 @@ mod tests {
             file_mgr.append("testfile")?;
         }
 
-        // Pin a block
         let block1 = BlockId::new("testfile".to_string(), 1);
         buffer_list.pin(block1.clone())?;
 
-        // Verify we can get the buffer
         assert!(buffer_list.get_buffer(&block1).is_some());
 
-        // Pin another block
         let block2 = BlockId::new("testfile".to_string(), 2);
         buffer_list.pin(block2.clone())?;
         assert!(buffer_list.get_buffer(&block2).is_some());
 
-        // Unpin first block
         buffer_list.unpin(&block1);
         assert!(buffer_list.get_buffer(&block1).is_none());
         assert!(buffer_list.get_buffer(&block2).is_some());
 
-        // Unpin all
         buffer_list.unpin_all();
         assert!(buffer_list.get_buffer(&block2).is_none());
 

@@ -20,4 +20,4 @@ impl BlockId {
     pub fn number(&self) -> i32 {
         self.number
     }
-} 
+}
