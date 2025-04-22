@@ -1,19 +1,19 @@
 use std::sync::{Arc, atomic::{AtomicI32, Ordering}};
-use crate::{error::DbError, storage::{block_id::BlockId, file_mgr::FileMgr}};
+use crate::{buffer::buffer::Buffer, error::DbError, storage::{block_id::BlockId, file_mgr::FileMgr}};
 use crate::buffer::{buffer_mgr::BufferMgr, buffer_list::BufferList};
 use crate::log::LogMgr;
 use crate::error::DbResult;
 
-use super::recovery::recovery_mgr::RecoveryMgr;
+use super::recovery::{commit_record::CommitRecord, log_record::{create_log_record, START_FLAG}, rollback_record::RollbackRecord, set_int_record::SetIntRecord, start_record::StartRecord};
 
 static NEXT_TX_NUM: AtomicI32 = AtomicI32::new(0);
 const END_OF_FILE: i32 = -1;
 
 pub struct Transaction<'a> {
-    recovery_mgr: RecoveryMgr<'a>,
     buffer_mgr: &'a BufferMgr,
+    log_mgr: Arc<LogMgr>,
     file_mgr: Arc<FileMgr>,
-    txnum: i32,
+    tx_num: i32,
     buffers: BufferList<'a>,
 }
 
@@ -22,35 +22,70 @@ impl<'a> Transaction<'a> {
         file_mgr: Arc<FileMgr>,
         log_mgr: Arc<LogMgr>,
         buffer_mgr: &'a BufferMgr,
-    ) -> Self {
-        let txnum = NEXT_TX_NUM.fetch_add(1, Ordering::SeqCst) + 1;
-        let recovery_mgr = RecoveryMgr::new(
-            txnum, 
-            Arc::clone(&log_mgr), 
-            buffer_mgr)
-            .expect("fail"); // TODO
+    ) -> DbResult<Self> {
+        let tx_num = NEXT_TX_NUM.fetch_add(1, Ordering::SeqCst) + 1;
+
+        let start_record = StartRecord::create(tx_num);
+        let bytes = start_record.to_bytes()?;
+        log_mgr.append(&bytes)?;
+
         let buffers = BufferList::new(&buffer_mgr);
 
-        Transaction {
-            recovery_mgr,
+        let tx = Transaction {
             buffer_mgr,
+            log_mgr,
             file_mgr,
-            txnum,
+            tx_num,
             buffers,
+        };
+        Ok(tx)
+    }
+
+    pub fn commit(&mut self) -> DbResult<()> {
+        self.buffer_mgr.flush_all(self.tx_num)?;
+        
+        let commit_record = CommitRecord::new(self.tx_num);
+        let bytes = commit_record.to_bytes()?;
+        let lsn = self.log_mgr.append(&bytes)?;
+        self.log_mgr.flush(lsn)?;
+
+        self.buffers.unpin_all();
+        Ok(())
+    }
+
+    pub fn rollback(&mut self) -> DbResult<()> {
+        self.do_rollback()?;
+
+        self.buffer_mgr.flush_all(self.tx_num)?;
+
+        let rollback_record = RollbackRecord::create(self.tx_num);
+        let bytes = rollback_record.to_bytes()?;
+        let lsn = self.log_mgr.append(&bytes)?;
+        self.log_mgr.flush(lsn)?;
+
+        self.buffers.unpin_all();
+        Ok(())
+    }
+
+    fn do_rollback(&mut self) -> DbResult<()> {
+        let log_mgr = Arc::clone(&self.log_mgr); // TODO this is a workaround for borrow checker, should fix
+        let mut iter: crate::log::LogIterator<'_> = log_mgr.iterator()?;
+        
+        while let bytes = iter.next()? {
+            let record = create_log_record(&bytes)?;
+            
+            if record.tx_number() == self.tx_num {
+                if record.op() == START_FLAG {
+                    return Ok(());
+                }
+                record.undo(self.tx_num, self)?;
+            }
         }
+        
+        Ok(())
     }
 
-    pub fn commit(&mut self) {
-        self.recovery_mgr.commit();
-        self.buffers.unpin_all();
-    }
-
-    pub fn rollback(&mut self) {
-        self.recovery_mgr.rollback();
-        self.buffers.unpin_all();
-    }
-
-    pub fn pin(&mut self, blk: BlockId) -> DbResult<()> {
+    pub fn pin(&mut self, blk: &BlockId) -> DbResult<()> {
         self.buffers.pin(blk)
     }
 
@@ -79,32 +114,38 @@ impl<'a> Transaction<'a> {
         let mut buffer = guard.borrow_mut();
         
         if log {
-            let lsn = self.recovery_mgr.set_int(&mut buffer, offset, val)?;
-            buffer.set_modified(self.txnum, lsn);
+            let lsn = self.do_set_int(&mut buffer, offset, val)?;
+            buffer.set_modified(self.tx_num, lsn);
         }
-
         buffer.contents_mut().set_int(offset, val);
         
         Ok(())
     }
 
-/*
-    pub fn set_string(&self, blk: &BlockId, offset: usize, val: String, ok_to_log: bool) -> DbResult<()> {
-        let guard = self.mybuffers.get_buffer(blk)
-            .ok_or_else(|| DbError::General("Buffer not found".into()))?;
+    pub fn do_set_int(&self, buffer: &mut Buffer, offset: usize, new_val: i32) -> DbResult<i32> {
+        let old_val = buffer.contents().get_int(offset);
+        let blk = buffer.block().expect("Buffer has no block assigned"); // TODO avoid panic
+        
+        let set_int_record: SetIntRecord = SetIntRecord::new(self.tx_num, blk.clone() /* TODO do something with this */, offset, old_val);
+        let bytes = set_int_record.to_bytes()?;
+        let lsn = self.log_mgr.append(&bytes)?;
+        
+        Ok(lsn)
+    }
+
+/*     pub fn set_string(&self, blk: &BlockId, offset: usize, val: String, log: bool) -> DbResult<()> {
+        let guard = self.buffers.get_buffer(blk)
+            .ok_or_else(|| DbError::BufferNotFound(blk.clone()))?;
         let mut buffer = guard.borrow_mut();
         
-        let lsn = if ok_to_log {
-            self.recovery_mgr.set_string(&mut buffer, offset, &val)?
-        } else {
-            -1
-        };
+        if log {
+            let lsn = self.recovery_mgr.set_string(&mut buffer, offset, &val)?;
+            buffer.set_modified(self.tx_num, lsn);
+        }
 
         buffer.contents_mut().set_string(offset, &val);
-        buffer.set_modified(self.txnum, lsn);
         Ok(())
-    }    
-*/
+    } */
 
      pub fn size(&self, file_name: &str) -> DbResult<i32> {
         let dummy_blk = BlockId::new(file_name.to_string(), END_OF_FILE);
@@ -136,16 +177,50 @@ mod tests {
         let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
         let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
         let buffer_mgr = Arc::new(BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 3));
-        let mut tx = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr);
+        let mut tx: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
         
         let blk = tx.append("testfile");
-        tx.pin(blk.clone())?;
+        tx.pin(&blk)?;
         tx.set_int(&blk, 0, 123, true)?;
         
         let val = tx.get_int(&blk, 0)?;
         assert_eq!(val, 123);
         
-        tx.commit();
+        tx.commit()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_transaction_rollback() -> DbResult<()> {
+        let temp_dir = TempDir::new().unwrap();
+        let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
+        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
+        let buffer_mgr = Arc::new(BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 3));
+        
+        let mut tx1: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
+
+        let blk1 = tx1.append("testfile");
+
+        tx1.pin(&blk1)?;
+        tx1.set_int(&blk1, 50, 777, true)?;
+        
+        tx1.commit()?;
+
+        let mut tx2: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
+        tx2.pin(&blk1)?;
+
+        let value = tx2.get_int(&blk1, 50)?;
+        assert_eq!(value, 777);
+
+        tx2.set_int(&blk1, 50, 999, true)?;
+        tx2.rollback()?;
+
+        let mut tx3: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
+        tx3.pin(&blk1)?;
+
+        let value2 = tx3.get_int(&blk1, 50)?;
+        assert_eq!(value2, 777);
+
         Ok(())
     }
 }

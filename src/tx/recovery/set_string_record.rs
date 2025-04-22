@@ -1,9 +1,9 @@
-use std::{any::Any, sync::Arc};
+use std::any::Any;
 
 use bincode::serialize;
 use serde::{Deserialize, Serialize};
 
-use crate::{buffer::buffer_mgr::BufferMgr, error::DbResult, storage::{block_id::BlockId, page::Page}};
+use crate::{error::DbResult, storage::block_id::BlockId, tx::transaction::Transaction};
 
 use super::log_record::{LogRecord, SETSTRING_FLAG};
 
@@ -41,7 +41,7 @@ impl LogRecord for SetStringRecord {
         self.tx_num
     }
 
-    fn undo(&self, tx_num: i32, buffer_mgr: &Arc<BufferMgr>) -> DbResult<()> {
+    fn undo(&self, tx_num: i32, tx: &mut Transaction) -> DbResult<()> {
         // TODO
         Ok(())
     }
@@ -54,7 +54,7 @@ impl LogRecord for SetStringRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tx::recovery::log_record::{create_log_record, LogRecord};
+    use crate::tx::recovery::log_record::create_log_record;
     use crate::storage::block_id::BlockId;
 
     #[test]

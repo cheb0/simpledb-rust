@@ -24,11 +24,11 @@ impl<'a> BufferList<'a> {
         self.buffers.get(blk)
     }
 
-    pub fn pin(&mut self, blk: BlockId) -> DbResult<()> {
+    pub fn pin(&mut self, blk: &BlockId) -> DbResult<()> {
         // if there is a double pin, then the previous guard is dropped. that's ok for now
         let guard = self.buffer_mgr.pin(&blk)?;
         self.buffers.insert(blk.clone(), guard);
-        self.pins.insert(blk);
+        self.pins.insert(blk.clone());
         Ok(())
     }
     
@@ -72,12 +72,12 @@ mod tests {
         }
 
         let block1 = BlockId::new("testfile".to_string(), 1);
-        buffer_list.pin(block1.clone())?;
+        buffer_list.pin(&block1)?;
 
         assert!(buffer_list.get_buffer(&block1).is_some());
 
         let block2 = BlockId::new("testfile".to_string(), 2);
-        buffer_list.pin(block2.clone())?;
+        buffer_list.pin(&block2)?;
         assert!(buffer_list.get_buffer(&block2).is_some());
 
         buffer_list.unpin(&block1);

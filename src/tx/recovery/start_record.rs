@@ -1,9 +1,9 @@
-use std::{any::Any, sync::Arc};
+use std::any::Any;
 
 use bincode::serialize;
 use serde::{Deserialize, Serialize};
 
-use crate::{buffer::buffer_mgr::BufferMgr, error::DbResult, log::LogMgr, storage::page::Page};
+use crate::{error::DbResult, storage::page::Page, tx::transaction::Transaction};
 
 use super::log_record::{LogRecord, START_FLAG};
 
@@ -39,7 +39,7 @@ impl LogRecord for StartRecord {
         self.tx_num
     }
 
-    fn undo(&self, tx_num: i32, buffer_mgr: &Arc<BufferMgr>) -> DbResult<()> {
+    fn undo(&self, tx_num: i32, tx: &mut Transaction) -> DbResult<()> {
         Ok(())
     }
 

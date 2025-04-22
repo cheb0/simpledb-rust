@@ -4,7 +4,7 @@ use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use crate::error::{DbError, DbResult};
+use crate::error::DbResult;
 
 use super::block_id::BlockId;
 use super::page::Page;
