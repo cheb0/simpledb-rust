@@ -1,9 +1,9 @@
-use std::{any::Any, sync::Arc};
+use std::any::Any;
 
 use bincode::serialize;
 use serde::{Deserialize, Serialize};
 
-use crate::{buffer::buffer_mgr::BufferMgr, error::DbResult, storage::page::Page};
+use crate::{error::DbResult, tx::transaction::Transaction};
 
 use super::log_record::{LogRecord, CHECKPOINT_FLAG};
 
@@ -31,7 +31,7 @@ impl LogRecord for CheckpointRecord {
         -1
     }
 
-    fn undo(&self, tx_num: i32, buffer_mgr: &Arc<BufferMgr>) -> DbResult<()> {
+    fn undo(&self, tx_num: i32, tx: &mut Transaction) -> DbResult<()> {
         Ok(())
     }
 
@@ -43,7 +43,7 @@ impl LogRecord for CheckpointRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tx::recovery::log_record::{create_log_record, LogRecord};
+    use crate::tx::recovery::log_record::create_log_record;
 
     #[test]
     fn test_checkpoint_record_serialization() -> crate::error::DbResult<()> {

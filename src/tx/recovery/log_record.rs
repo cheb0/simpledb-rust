@@ -1,10 +1,9 @@
-use std::sync::Arc;
 use std::any::Any;
 
 use bincode::deserialize;
 
-use crate::buffer::buffer_mgr::BufferMgr;
 use crate::error::DbResult;
+use crate::tx::transaction::Transaction;
 
 use super::checkpoint_record::CheckpointRecord;
 use super::commit_record::CommitRecord;
@@ -27,7 +26,7 @@ pub trait LogRecord: Send + Sync {
     fn tx_number(&self) -> i32;
 
     /// Undoes the operation encoded by this log record.
-    fn undo(&self, tx_num: i32, buffer_mgr: &Arc<BufferMgr>) -> DbResult<()>;
+    fn undo(&self, tx_num: i32, tx: &mut Transaction) -> DbResult<()>;
 
     fn as_any(&self) -> &dyn Any;
 }

@@ -1,8 +1,13 @@
 use thiserror::Error;
 use bincode;
 
+use crate::storage::block_id::BlockId;
+
 #[derive(Error, Debug)]
 pub enum DbError {
+    #[error("Buffer not found: {0:?}")]
+    BufferNotFound(BlockId),
+
     #[error("Buffer abort exception: {0}")]
     BufferAbort(String),
     
@@ -14,7 +19,7 @@ pub enum DbError {
     
     #[error("Deadlock exception")]
     Deadlock,
-    
+
     #[error("Bad index value: {0}")]
     BadIndex(String),
     
@@ -31,10 +36,4 @@ impl From<bincode::Error> for DbError {
     }
 }
 
-/* impl From<std::io::Error> for DbError {
-    fn from(err: std::io::Error) -> Self {
-        DbError::Io(err)
-    }
-} */
-
-pub type DbResult<T> = std::result::Result<T, DbError>; 
+pub type DbResult<T> = std::result::Result<T, DbError>;
