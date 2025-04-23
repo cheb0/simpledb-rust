@@ -110,6 +110,7 @@ impl BufferMgr {
         }
         
         if let Some(idx) = self.find_unpinned_buffer(inner) {
+            inner.block_to_buffer_idx.insert(blk.clone(), idx);
             inner.pins[idx] = 1;
             inner.num_available -= 1;
             
@@ -348,6 +349,37 @@ mod tests {
             let mut buffer = guard2.borrow_mut();
             buffer.contents_mut().set_int(0, 5);
         }
+        Ok(())
+    }
+
+    #[test]
+    fn test_pin_same_block_returns_same_buffer() -> DbResult<()> {
+        let temp_dir = TempDir::new().unwrap();
+        let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
+        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
+        let buffer_mgr = BufferMgr::new(file_mgr.clone(), log_mgr.clone(), 3);
+        file_mgr.append("testfile")?;
+        
+        let blk = BlockId::new("testfile".to_string(), 0);
+        
+        let first_guard = buffer_mgr.pin(&blk)?;
+        let first_buffer_ptr = first_guard.buffer as *const _;
+        
+        let second_guard = buffer_mgr.pin(&blk)?;
+        let second_buffer_ptr = second_guard.buffer as *const _;
+        
+        assert_eq!(first_buffer_ptr, second_buffer_ptr);
+        
+        {
+            let inner = buffer_mgr.inner.lock().unwrap();
+            let idx = inner.block_to_buffer_idx.get(&blk).unwrap();
+            assert_eq!(inner.pins[*idx], 2);
+        }
+        
+        drop(first_guard);
+        drop(second_guard);
+        
+        assert_eq!(buffer_mgr.available(), 3);
         Ok(())
     }
 }

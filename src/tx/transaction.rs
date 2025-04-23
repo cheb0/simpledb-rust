@@ -147,7 +147,7 @@ impl<'a> Transaction<'a> {
         Ok(())
     } */
 
-     pub fn size(&self, file_name: &str) -> DbResult<i32> {
+    pub fn size(&self, file_name: &str) -> DbResult<i32> {
         let dummy_blk = BlockId::new(file_name.to_string(), END_OF_FILE);
         Ok(self.file_mgr.block_count(file_name)?)
     }
@@ -171,7 +171,7 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    #[test]
+     #[test]
     fn test_transaction_basic() -> DbResult<()> {
         let temp_dir = TempDir::new().unwrap();
         let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);

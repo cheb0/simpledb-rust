@@ -40,7 +40,6 @@ impl LogRecord for RollbackRecord {
     }
 
     fn undo(&self, tx_num: i32, tx: &mut Transaction) -> DbResult<()> {
-        // Rollback records don't need to be undone
         Ok(())
     }
 

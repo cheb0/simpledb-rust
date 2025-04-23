@@ -89,4 +89,27 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_pin_already_pinned_block() -> DbResult<()> {
+        let temp_dir = TempDir::new().unwrap();
+        let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
+        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
+        let buffer_mgr = BufferMgr::new(file_mgr.clone(), log_mgr.clone(), 3);
+        let mut buffer_list = BufferList::new(&buffer_mgr);
+        
+        file_mgr.append("testfile")?;
+        
+        let block = BlockId::new("testfile".to_string(), 0);
+        buffer_list.pin(&block)?;
+        
+        let first_buffer_ptr = buffer_list.get_buffer(&block).unwrap() as *const _;
+        
+        buffer_list.pin(&block)?;
+        
+        let second_buffer_ptr = buffer_list.get_buffer(&block).unwrap() as *const _;
+        
+        assert_eq!(first_buffer_ptr, second_buffer_ptr);
+        Ok(())
+    }
 }
