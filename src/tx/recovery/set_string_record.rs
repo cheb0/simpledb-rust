@@ -10,13 +10,13 @@ use super::log_record::{LogRecord, SETSTRING_FLAG};
 #[derive(Serialize, Deserialize)]
 pub struct SetStringRecord {
     tx_num: i32,
-    offset: i32,
+    offset: usize,
     val: String,
     blk: BlockId,
 }
 
 impl SetStringRecord {
-    pub fn new(tx_num: i32, blk: BlockId, offset: i32, val: String) -> Self {
+    pub fn new(tx_num: i32, blk: BlockId, offset: usize, val: String) -> Self {
         SetStringRecord {
             tx_num,
             offset,
@@ -42,7 +42,9 @@ impl LogRecord for SetStringRecord {
     }
 
     fn undo(&self, tx_num: i32, tx: &mut Transaction) -> DbResult<()> {
-        // TODO
+        tx.pin(&self.blk)?;
+        tx.set_string(&self.blk, self.offset, self.val.clone(), false)?;
+        tx.unpin(&self.blk);
         Ok(())
     }
     
