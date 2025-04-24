@@ -203,23 +203,30 @@ mod tests {
 
         tx1.pin(&blk1)?;
         tx1.set_int(&blk1, 50, 777, true)?;
+        tx1.set_int(&blk1, 200, 123, true)?;
         
         tx1.commit()?;
 
         let mut tx2: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
         tx2.pin(&blk1)?;
 
-        let value = tx2.get_int(&blk1, 50)?;
-        assert_eq!(value, 777);
+        let value1 = tx2.get_int(&blk1, 50)?;
+        assert_eq!(value1, 777);
+        let value2 = tx2.get_int(&blk1, 200)?;
+        assert_eq!(value2, 123);
 
         tx2.set_int(&blk1, 50, 999, true)?;
+        tx2.set_int(&blk1, 200, 234, true)?;
         tx2.rollback()?;
 
         let mut tx3: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
         tx3.pin(&blk1)?;
 
-        let value2 = tx3.get_int(&blk1, 50)?;
-        assert_eq!(value2, 777);
+        let value1 = tx3.get_int(&blk1, 50)?;
+        assert_eq!(value1, 777);
+        let value2 = tx3.get_int(&blk1, 200)?;
+        assert_eq!(value2, 123);
+        
 
         Ok(())
     }
