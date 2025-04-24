@@ -4,9 +4,10 @@ use crate::error::DbResult;
 
 use super::buffer_mgr::{BufferMgr, PinnedBufferGuard};
 
+// TODO currently this class duplicates BufferMgr functionality
 pub struct BufferList<'a> {
     buffers: HashMap<BlockId, PinnedBufferGuard<'a>>,
-    pins: HashSet<BlockId>,
+    pins: HashMap<BlockId, usize>,
     buffer_mgr: &'a BufferMgr,
 }
 
@@ -14,7 +15,7 @@ impl<'a> BufferList<'a> {
     pub fn new(buffer_mgr: &'a BufferMgr) -> Self {
         BufferList {
             buffers: HashMap::new(),
-            pins: HashSet::new(),
+            pins: HashMap::new(),
             buffer_mgr,
         }
     }
@@ -25,18 +26,26 @@ impl<'a> BufferList<'a> {
     }
 
     pub fn pin(&mut self, blk: &BlockId) -> DbResult<()> {
-        // if there is a double pin, then the previous guard is dropped. that's ok for now
+        if let Some(count) = self.pins.get_mut(&blk) {
+            *count += 1;
+            return Ok(());
+        }
         let guard = self.buffer_mgr.pin(&blk)?;
         self.buffers.insert(blk.clone(), guard);
-        self.pins.insert(blk.clone());
+        self.pins.insert(blk.clone(), 1);
         Ok(())
     }
     
     pub fn unpin(&mut self, blk: &BlockId) {
-        if let Some(guard) = self.buffers.remove(blk) {
-            drop(guard);
+        if let Some(count) = self.pins.get_mut(blk) {
+            *count -= 1;
+            if *count == 0 {
+                if let Some(guard) = self.buffers.remove(blk) {
+                    drop(guard);
+                }
+                self.pins.remove(blk);
+            }
         }
-        self.pins.remove(blk);
     }
     
     pub fn unpin_all(&mut self) {
