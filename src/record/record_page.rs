@@ -1,0 +1,153 @@
+use crate::error::DbResult;
+use crate::storage::block_id::BlockId;
+use crate::tx::transaction::Transaction;
+use super::layout::Layout;
+use super::schema::FieldType;
+
+const EMPTY: i32 = 0;
+const USED: i32 = 1;
+
+pub struct RecordPage<'tx, 'a> {
+    tx: &'tx mut Transaction<'a>,
+    blk: BlockId,
+    layout: Layout,
+}
+
+impl<'tx, 'a> RecordPage<'tx, 'a> {
+    pub fn new(tx: &'tx mut Transaction<'a>, blk: BlockId, layout: Layout) -> DbResult<Self> {
+        tx.pin(&blk)?;
+        Ok(RecordPage { tx, blk, layout })
+    }
+
+    pub fn get_int(&self, slot: usize, field_name: &str) -> DbResult<i32> {
+        let field_pos = self.offset(slot) + self.layout.offset(field_name)
+            .expect("Field not found");
+        self.tx.get_int(&self.blk, field_pos)
+    }
+
+    pub fn get_string(&self, slot: usize, field_name: &str) -> DbResult<String> {
+        let field_pos = self.offset(slot) + self.layout.offset(field_name)
+            .expect("Field not found");
+        self.tx.get_string(&self.blk, field_pos)
+    }
+
+    pub fn set_int(&self, slot: usize, field_name: &str, val: i32) -> DbResult<()> {
+        let field_pos = self.offset(slot) + self.layout.offset(field_name)
+            .expect("Field not found");
+        self.tx.set_int(&self.blk, field_pos, val, true)
+    }
+
+    pub fn set_string(&self, slot: usize, field_name: &str, val: String) -> DbResult<()> {
+        let field_pos = self.offset(slot) + self.layout.offset(field_name)
+            .expect("Field not found");
+        self.tx.set_string(&self.blk, field_pos, val, true)
+    }
+
+    pub fn delete(&self, slot: usize) -> DbResult<()> {
+        self.set_flag(slot, EMPTY)
+    }
+
+    pub fn format(&self) -> DbResult<()> {
+        let mut slot = 0;
+        while self.is_valid_slot(slot) {
+            self.tx.set_int(&self.blk, self.offset(slot), EMPTY, false)?;
+
+            for field_name in self.layout.schema().fields() {
+                let field_pos = self.offset(slot) + self.layout.offset(field_name)
+                    .expect("Field not found");
+                
+                match self.layout.schema().field_type(field_name)
+                    .expect("Field type not found") 
+                {
+                    FieldType::Integer => {
+                        self.tx.set_int(&self.blk, field_pos, 0, false)?;
+                    }
+                    FieldType::Varchar => {
+                        self.tx.set_string(&self.blk, field_pos, String::new(), false)?;
+                    }
+                }
+            }
+            slot += 1;
+        }
+        Ok(())
+    }
+
+    pub fn next_after(&self, slot: usize) -> DbResult<Option<usize>> {
+        self.search_after(slot, USED)
+    }
+
+    pub fn insert_after(&self, slot: usize) -> DbResult<Option<usize>> {
+        if let Some(new_slot) = self.search_after(slot, EMPTY)? {
+            self.set_flag(new_slot, USED)?;
+            Ok(Some(new_slot))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn block(&self) -> &BlockId {
+        &self.blk
+    }
+
+    fn set_flag(&self, slot: usize, flag: i32) -> DbResult<()> {
+        self.tx.set_int(&self.blk, self.offset(slot), flag, true)
+    }
+
+    fn search_after(&self, mut slot: usize, flag: i32) -> DbResult<Option<usize>> {
+        slot += 1;
+        while self.is_valid_slot(slot) {
+            if self.tx.get_int(&self.blk, self.offset(slot))? == flag {
+                return Ok(Some(slot));
+            }
+            slot += 1;
+        }
+        Ok(None)
+    }
+
+    fn is_valid_slot(&self, slot: usize) -> bool {
+        self.offset(slot + 1) <= self.tx.block_size()
+    }
+
+    fn offset(&self, slot: usize) -> usize {
+        slot * self.layout.slot_size()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::DbResult;
+    use crate::record::schema::Schema;
+    use crate::storage::file_mgr::FileMgr;
+    use crate::log::LogMgr;
+    use crate::buffer::buffer_mgr::BufferMgr;
+    use std::sync::Arc;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_record_page_basic() -> DbResult<()> {
+        let temp_dir = TempDir::new().unwrap();
+        let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
+        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
+        let buffer_mgr = Arc::new(BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 3));
+
+        let mut schema = Schema::new();
+        schema.add_int_field("id".to_string());
+        schema.add_string_field("name".to_string(), 20);
+        let layout = Layout::new(schema);
+        let mut tx = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
+        let blk = tx.append("testfile");
+        {
+            let record_page = RecordPage::new(&mut tx, blk.clone(), layout)?;
+            record_page.format()?;
+            let slot = record_page.insert_after(0)?.expect("Failed to insert");
+            record_page.set_int(slot, "id", 123)?;
+            record_page.set_string(slot, "name", "test".to_string())?;
+            assert_eq!(record_page.get_int(slot, "id")?, 123);
+            assert_eq!(record_page.get_string(slot, "name")?, "test");
+            record_page.delete(slot)?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+} 
