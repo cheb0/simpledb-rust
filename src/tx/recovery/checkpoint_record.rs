@@ -31,7 +31,7 @@ impl LogRecord for CheckpointRecord {
         -1
     }
 
-    fn undo(&self, tx_num: i32, tx: &mut Transaction) -> DbResult<()> {
+    fn undo(&self, tx_num: i32, tx: Transaction) -> DbResult<()> {
         Ok(())
     }
 

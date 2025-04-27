@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use super::schema::{Schema, FieldType};
 use crate::storage::page::Page;
 
+#[derive(Debug, Clone)]
 pub struct Layout {
     schema: Schema,
     offsets: HashMap<String, usize>,

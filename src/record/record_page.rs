@@ -7,14 +7,14 @@ use super::schema::FieldType;
 const EMPTY: i32 = 0;
 const USED: i32 = 1;
 
-pub struct RecordPage<'tx, 'a> {
-    tx: &'tx mut Transaction<'a>,
+pub struct RecordPage<'a> {
+    tx: Transaction<'a>,
     blk: BlockId,
     layout: Layout,
 }
 
-impl<'tx, 'a> RecordPage<'tx, 'a> {
-    pub fn new(tx: &'tx mut Transaction<'a>, blk: BlockId, layout: Layout) -> DbResult<Self> {
+impl<'a> RecordPage<'a> {
+    pub fn new(tx: Transaction<'a>, blk: BlockId, layout: Layout) -> DbResult<Self> {
         tx.pin(&blk)?;
         Ok(RecordPage { tx, blk, layout })
     }
@@ -135,10 +135,12 @@ mod tests {
         schema.add_int_field("id".to_string());
         schema.add_string_field("name".to_string(), 20);
         let layout = Layout::new(schema);
-        let mut tx = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
-        let blk = tx.append("testfile");
+        let tx = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
+
+        let blk = tx.append("testfile")?;
+
         {
-            let record_page = RecordPage::new(&mut tx, blk.clone(), layout)?;
+            let record_page = RecordPage::new(tx.clone(), blk.clone(), layout)?;
             record_page.format()?;
             let slot = record_page.insert_after(0)?.expect("Failed to insert");
             record_page.set_int(slot, "id", 123)?;
