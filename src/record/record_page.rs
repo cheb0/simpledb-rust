@@ -113,6 +113,12 @@ impl<'a> RecordPage<'a> {
     }
 }
 
+impl<'a> Drop for RecordPage<'a> {
+    fn drop(&mut self) {
+        self.tx.unpin(&self.blk);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -138,9 +144,14 @@ mod tests {
         let tx = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
 
         let blk = tx.append("testfile")?;
+        
+        assert_eq!(3, buffer_mgr.available());
 
         {
             let record_page = RecordPage::new(tx.clone(), blk.clone(), layout)?;
+
+            assert_eq!(2, buffer_mgr.available()); // one buffer is pinned by record_page
+
             record_page.format()?;
             let slot = record_page.insert_after(0)?.expect("Failed to insert");
             record_page.set_int(slot, "id", 123)?;

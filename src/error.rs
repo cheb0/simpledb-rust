@@ -28,6 +28,9 @@ pub enum DbError {
     
     #[error("Serialization error: {0}")]
     Serialization(String),
+
+    #[error("No available slot")]
+    NoAvailableSlot,
 }
 
 impl From<bincode::Error> for DbError {
