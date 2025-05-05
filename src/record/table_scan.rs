@@ -189,8 +189,8 @@ mod tests {
         let buffer_mgr = Arc::new(BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 3));
 
         let mut schema = Schema::new();
-        schema.add_int_field("id".to_string());
-        schema.add_string_field("name".to_string(), 20);
+        schema.add_int_field("id");
+        schema.add_string_field("name", 20);
         let layout = Layout::new(schema);
         let mut tx = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
 

@@ -26,21 +26,21 @@ impl Schema {
         }
     }
 
-    pub fn add_field(&mut self, field_name: String, field_type: FieldType, length: usize) {
-        self.fields.push(field_name.clone());
-        self.info.insert(field_name, FieldInfo { field_type, length });
+    pub fn add_field(&mut self, field_name: &str, field_type: FieldType, length: usize) {
+        self.fields.push(field_name.to_string());
+        self.info.insert(field_name.to_string(), FieldInfo { field_type, length });
     }
 
-    pub fn add_int_field(&mut self, field_name: String) {
+    pub fn add_int_field(&mut self, field_name: &str) {
         self.add_field(field_name, FieldType::Integer, 0);
     }
 
-    pub fn add_string_field(&mut self, field_name: String, length: usize) {
+    pub fn add_string_field(&mut self, field_name: &str, length: usize) {
         self.add_field(field_name, FieldType::Varchar, length);
     }
 
-    pub fn add_from_schema(&mut self, field_name: String, other: &Schema) {
-        let field_info = other.info.get(&field_name)
+    pub fn add_from_schema(&mut self, field_name: &str, other: &Schema) {
+        let field_info = other.info.get(field_name)
             .expect("Field not found in schema");
         self.add_field(
             field_name,
@@ -51,7 +51,7 @@ impl Schema {
 
     pub fn add_all(&mut self, other: &Schema) {
         for field_name in &other.fields {
-            self.add_from_schema(field_name.clone(), other);
+            self.add_from_schema(&field_name, other);
         }
     }
 
@@ -80,8 +80,8 @@ mod tests {
     fn test_schema_basic() {
         let mut schema = Schema::new();
         
-        schema.add_int_field("id".to_string());
-        schema.add_string_field("name".to_string(), 20);
+        schema.add_int_field("id");
+        schema.add_string_field("name", 20);
 
         assert!(schema.has_field("id"));
         assert!(schema.has_field("name"));
@@ -95,8 +95,8 @@ mod tests {
     #[test]
     fn test_schema_add_all() {
         let mut schema1 = Schema::new();
-        schema1.add_int_field("id".to_string());
-        schema1.add_string_field("name".to_string(), 20);
+        schema1.add_int_field("id");
+        schema1.add_string_field("name", 20);
 
         let mut schema2 = Schema::new();
         schema2.add_all(&schema1);
