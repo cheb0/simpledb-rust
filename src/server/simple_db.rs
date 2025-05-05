@@ -1,0 +1,127 @@
+use std::path::Path;
+use std::sync::Arc;
+
+use crate::buffer::buffer_mgr::BufferMgr;
+use crate::error::DbResult;
+use crate::log::LogMgr;
+use crate::metadata::metadata_mgr::MetadataMgr;
+use crate::storage::file_mgr::FileMgr;
+use crate::tx::transaction::Transaction;
+
+use super::config::Config;
+
+pub struct SimpleDB {
+    file_mgr: Arc<FileMgr>,
+    log_mgr: Arc<LogMgr>,
+    buffer_mgr: Arc<BufferMgr>,
+    metadata_mgr: Arc<MetadataMgr>,
+}
+
+impl SimpleDB {
+    pub fn with_config(config: Config) -> DbResult<Self> {
+        let file_mgr = Arc::new(FileMgr::new(&config.db_directory, config.block_size)?);
+        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), config.log_file_path())?);
+        let buffer_mgr = Arc::new(BufferMgr::new(
+            Arc::clone(&file_mgr),
+            Arc::clone(&log_mgr),
+            config.buffer_capacity,
+        ));
+        // TODO recover if is_new
+
+        let tx = Transaction::new(
+            Arc::clone(&self.file_mgr),
+            Arc::clone(&self.log_mgr),
+            &self.buffer_mgr,
+        )?;
+        
+        let md_mgr = MetadataMgr::new(file_mgr.is_new(), tx.clone())?;
+        tx.commit()?;
+    
+        Ok(Self {
+            file_mgr,
+            log_mgr,
+            buffer_mgr,
+            metadata_mgr: Arc::new(md_mgr),
+        })
+    }
+
+    pub fn new<P: AsRef<Path>>(db_directory: P) -> DbResult<Self> {
+        Self::with_config(Config::new(db_directory))
+    }
+
+    pub fn load_metadata(&mut self) -> DbResult<()> {
+        let tx = Transaction::new(
+            Arc::clone(&self.file_mgr),
+            Arc::clone(&self.log_mgr),
+            &self.buffer_mgr,
+        )?;
+        
+        let md_mgr = MetadataMgr::new(false, tx.clone())?;
+        tx.commit()?;
+        
+        self.metadata_mgr = Arc::new(md_mgr);
+        Ok(())
+    }
+
+    pub fn new_tx(&self) -> DbResult<Transaction> {
+        Transaction::new(
+            Arc::clone(&self.file_mgr),
+            Arc::clone(&self.log_mgr),
+            &self.buffer_mgr,
+        )
+    }
+
+    pub fn file_mgr(&self) -> Arc<FileMgr> {
+        Arc::clone(&self.file_mgr)
+    }
+
+    pub fn log_mgr(&self) -> Arc<LogMgr> {
+        Arc::clone(&self.log_mgr)
+    }
+
+    pub fn buffer_mgr(&self) -> Arc<BufferMgr> {
+        Arc::clone(&self.buffer_mgr)
+    }
+
+    pub fn metadata_mgr(&self) -> Arc<MetadataMgr> {
+        self.metadata_mgr.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::record::schema::Schema;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_simple_db() -> DbResult<()> {
+        let temp_dir = TempDir::new().unwrap();
+        
+        let mut db = SimpleDB::with_config(
+            Config::new(temp_dir.path())
+                .block_size(400)
+                .buffer_capacity(5)
+                .log_file("testlog")
+        )?;
+        
+        db.init_metadata()?;
+
+        let md_mgr = db.metadata_mgr().unwrap();
+        
+        let tx = db.new_tx()?;
+        
+        let mut test_schema = Schema::new();
+        test_schema.add_int_field("id");
+        test_schema.add_string_field("name", 20);
+        
+        md_mgr.create_table("test_table", &test_schema, tx.clone())?;
+        
+        let layout = md_mgr.get_layout("test_table", tx.clone())?;
+        assert!(layout.slot_size() > 0);
+        
+        tx.commit()?;
+        
+        Ok(())
+    }
+} 

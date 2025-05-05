@@ -5,6 +5,7 @@ mod error;
 mod tx;
 mod record;
 mod metadata;
+mod server;
 
 fn main() {
     
