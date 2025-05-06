@@ -13,21 +13,24 @@ use super::config::Config;
 pub struct SimpleDB<'a> {
     file_mgr: Arc<FileMgr>,
     log_mgr: Arc<LogMgr>,
-    buffer_mgr: BufferMgr,
+    buffer_mgr: &'a BufferMgr,
     metadata_mgr: Arc<MetadataMgr>,
 }
 
-impl SimpleDB {
+impl<'a> SimpleDB<'a> {
     pub fn with_config(config: Config) -> DbResult<Self> {
         let file_mgr = Arc::new(FileMgr::new(&config.db_directory, config.block_size)?);
         let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), config.log_file_path().to_str().unwrap())?);
-        let buffer_mgr = Arc::new(BufferMgr::new(
+        
+        // TODO fix this
+        let buffer_mgr = Box::leak(Box::new(BufferMgr::new(
             Arc::clone(&file_mgr),
             Arc::clone(&log_mgr),
             config.buffer_capacity,
-        ));
-        // TODO recover if is_new
+        )));
 
+
+        // TODO recover if is_new
         let tx = Transaction::new(
             Arc::clone(&file_mgr),
             Arc::clone(&log_mgr),
@@ -63,7 +66,7 @@ impl SimpleDB {
         Ok(())
     }
 
-    pub fn new_tx(&self) -> DbResult<Transaction> {
+    pub fn new_tx(&'a self) -> DbResult<Transaction<'a>> {
         Transaction::new(
             Arc::clone(&self.file_mgr),
             Arc::clone(&self.log_mgr),
@@ -77,10 +80,6 @@ impl SimpleDB {
 
     pub fn log_mgr(&self) -> Arc<LogMgr> {
         Arc::clone(&self.log_mgr)
-    }
-
-    pub fn buffer_mgr(&self) -> Arc<BufferMgr> {
-        Arc::clone(&self.buffer_mgr)
     }
 
     pub fn metadata_mgr(&self) -> Arc<MetadataMgr> {
