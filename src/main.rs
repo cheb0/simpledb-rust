@@ -6,6 +6,7 @@ mod tx;
 mod record;
 mod metadata;
 mod server;
+mod query;
 
 fn main() {
     

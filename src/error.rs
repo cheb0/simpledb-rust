@@ -31,6 +31,9 @@ pub enum DbError {
 
     #[error("No available slot")]
     NoAvailableSlot,
+
+    #[error("Field not found: {0}")]
+    FieldNotFound(String),
 }
 
 impl From<bincode::Error> for DbError {

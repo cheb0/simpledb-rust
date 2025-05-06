@@ -10,17 +10,17 @@ use crate::tx::transaction::Transaction;
 
 use super::config::Config;
 
-pub struct SimpleDB {
+pub struct SimpleDB<'a> {
     file_mgr: Arc<FileMgr>,
     log_mgr: Arc<LogMgr>,
-    buffer_mgr: Arc<BufferMgr>,
+    buffer_mgr: BufferMgr,
     metadata_mgr: Arc<MetadataMgr>,
 }
 
 impl SimpleDB {
     pub fn with_config(config: Config) -> DbResult<Self> {
         let file_mgr = Arc::new(FileMgr::new(&config.db_directory, config.block_size)?);
-        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), config.log_file_path())?);
+        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), config.log_file_path().to_str().unwrap())?);
         let buffer_mgr = Arc::new(BufferMgr::new(
             Arc::clone(&file_mgr),
             Arc::clone(&log_mgr),
@@ -29,9 +29,9 @@ impl SimpleDB {
         // TODO recover if is_new
 
         let tx = Transaction::new(
-            Arc::clone(&self.file_mgr),
-            Arc::clone(&self.log_mgr),
-            &self.buffer_mgr,
+            Arc::clone(&file_mgr),
+            Arc::clone(&log_mgr),
+            &buffer_mgr,
         )?;
         
         let md_mgr = MetadataMgr::new(file_mgr.is_new(), tx.clone())?;
@@ -40,7 +40,7 @@ impl SimpleDB {
         Ok(Self {
             file_mgr,
             log_mgr,
-            buffer_mgr,
+            buffer_mgr: buffer_mgr,
             metadata_mgr: Arc::new(md_mgr),
         })
     }
@@ -104,10 +104,8 @@ mod tests {
                 .buffer_capacity(5)
                 .log_file("testlog")
         )?;
-        
-        db.init_metadata()?;
 
-        let md_mgr = db.metadata_mgr().unwrap();
+        let md_mgr = db.metadata_mgr();
         
         let tx = db.new_tx()?;
         
