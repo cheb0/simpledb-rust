@@ -13,16 +13,7 @@ pub enum DbError {
     
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
-    
-    #[error("Transaction abort exception: {0}")]
-    TransactionAbort(String),
-    
-    #[error("Deadlock exception")]
-    Deadlock,
 
-    #[error("Bad index value: {0}")]
-    BadIndex(String),
-    
     #[error("Schema exception: {0}")]
     Schema(String),
     
@@ -34,6 +25,9 @@ pub enum DbError {
 
     #[error("Field not found: {0}")]
     FieldNotFound(String),
+
+    #[error("Lock abort")]
+    LockAbort,
 }
 
 impl From<bincode::Error> for DbError {
