@@ -66,8 +66,8 @@ impl LogMgr {
 
     pub fn flush(&self, lsn: i32) -> io::Result<()> {
         let mut inner: std::sync::MutexGuard<'_, LogMgrInner> = self.inner.lock().unwrap();
-        if inner.last_saved_lsn > inner.last_saved_lsn {
-            self.flush_internal(&mut inner);
+        if lsn >= inner.last_saved_lsn {
+            return self.flush_internal(&mut inner);
         }
         Ok(())
     }
@@ -129,7 +129,7 @@ pub struct LogIterator<'a> {
 
 impl<'a> LogIterator<'a> {
     fn new(file_mgr: &'a Arc<FileMgr>, blk: BlockId) -> io::Result<Self> {
-        let mut page = Page::new(file_mgr.block_size());
+        let page = Page::new(file_mgr.block_size());
         let mut iter = LogIterator {
             file_mgr,
             blk: blk.clone(),

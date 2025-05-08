@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use tempfile::TempDir;
 
 use crate::{error::DbResult, query::{Scan, UpdateScan}, record::{layout::Layout, schema::{FieldType, Schema}, table_scan::TableScan}, tx::transaction::Transaction};
 
@@ -43,24 +42,24 @@ impl TableMgr {
         
         {
             let mut tcat = TableScan::new(tx.clone(), "tblcat", self.tcat_layout.clone())?;
-            tcat.insert();
-            tcat.set_string("tblname", tblname);
-            tcat.set_int("slotsize", layout.slot_size() as i32);
+            tcat.insert()?;
+            tcat.set_string("tblname", tblname)?;
+            tcat.set_int("slotsize", layout.slot_size() as i32)?;
         }
 
         {
             let mut fcat = TableScan::new(tx.clone(), "fldcat", self.fcat_layout.clone())?;
             for fldname in sch.fields() {
-                fcat.insert();
-                fcat.set_string("tblname", tblname);
-                fcat.set_string("fldname", &fldname);
+                fcat.insert()?;
+                fcat.set_string("tblname", tblname)?;
+                fcat.set_string("fldname", &fldname)?;
                 let type_value = match sch.field_type(&fldname).unwrap() {
                     FieldType::Integer => 0,
                     FieldType::Varchar => 1,
                 };
-                fcat.set_int("type", type_value);
-                fcat.set_int("length", sch.length(&fldname).unwrap_or(0) as i32);
-                fcat.set_int("offset", layout.offset(&fldname).unwrap_or(0) as i32);
+                fcat.set_int("type", type_value)?;
+                fcat.set_int("length", sch.length(&fldname).unwrap_or(0) as i32)?;
+                fcat.set_int("offset", layout.offset(&fldname).unwrap_or(0) as i32)?;
             }
         }
 

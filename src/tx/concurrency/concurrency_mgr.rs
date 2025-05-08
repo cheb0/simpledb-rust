@@ -86,14 +86,17 @@ mod tests {
         
         handle.join().unwrap()?;
         
+        // single S lock now - should acquire X lock
         let result = ccy_mgr.lock_exclusive(&blk);
-        
+        assert!(result.is_ok());
+
         ccy_mgr.release();
         
         let lock_table_clone = Arc::clone(&lock_table);
         let blk_clone = blk.clone();
         
         let handle = thread::spawn(move || -> DbResult<()> {
+            // it's free, should be able to acquire X lock
             let mut cm3 = ConcurrencyMgr::new(lock_table_clone);
             cm3.lock_exclusive(&blk_clone)?;
             cm3.release();

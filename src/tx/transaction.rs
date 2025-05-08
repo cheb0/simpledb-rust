@@ -1,5 +1,5 @@
 use std::{cell::RefCell, rc::Rc, sync::{atomic::{AtomicI32, Ordering}, Arc}};
-use crate::{buffer::buffer::Buffer, error::DbError, storage::{block_id::BlockId, file_mgr::FileMgr}};
+use crate::{error::DbError, storage::{block_id::BlockId, file_mgr::FileMgr}};
 use crate::buffer::{buffer_mgr::BufferMgr, buffer_list::BufferList};
 use crate::log::LogMgr;
 use crate::error::DbResult;
@@ -7,7 +7,6 @@ use crate::error::DbResult;
 use super::recovery::{commit_record::CommitRecord, log_record::{create_log_record, START_FLAG}, rollback_record::RollbackRecord, set_int_record::SetIntRecord, set_string_record::SetStringRecord, start_record::StartRecord};
 
 static NEXT_TX_NUM: AtomicI32 = AtomicI32::new(0);
-const END_OF_FILE: i32 = -1;
 
 pub struct TransactionInner<'a> {
     buffer_mgr: &'a BufferMgr,

@@ -97,7 +97,7 @@ mod tests {
     fn test_simple_db() -> DbResult<()> {
         let temp_dir = TempDir::new().unwrap();
         
-        let mut db = SimpleDB::with_config(
+        let db = SimpleDB::with_config(
             Config::new(temp_dir.path())
                 .block_size(400)
                 .buffer_capacity(5)

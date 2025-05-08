@@ -39,7 +39,7 @@ impl LogRecord for StartRecord {
         self.tx_num
     }
 
-    fn undo(&self, tx_num: i32, tx: Transaction) -> DbResult<()> {
+    fn undo(&self, _tx_num: i32, _tx: Transaction) -> DbResult<()> {
         Ok(())
     }
 
@@ -51,7 +51,7 @@ impl LogRecord for StartRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tx::recovery::log_record::{create_log_record, LogRecord};
+    use crate::tx::recovery::log_record::create_log_record;
 
     #[test]
     fn test_start_record_serialization() -> crate::error::DbResult<()> {

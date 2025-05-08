@@ -64,7 +64,7 @@ impl<'a> TableScan<'a> {
         self.record_page.take();
 
         let blk = self.tx.append(&self.file_name)?;
-        let mut record_page = RecordPage::new(self.tx.clone(), blk, self.layout.clone())?;
+        let record_page = RecordPage::new(self.tx.clone(), blk, self.layout.clone())?;
         record_page.format()?;
         self.record_page = Some(record_page);
         self.current_slot = None;
@@ -231,11 +231,11 @@ mod tests {
         schema.add_int_field("id");
         schema.add_string_field("name", 20);
         let layout = Layout::new(schema);
-        let mut tx = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
+        let tx = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
 
-        let blk1 = tx.append("testfile");
-        let blk2 = tx.append("testfile");
-        let blk3 = tx.append("testfile");
+        tx.append("testfile")?;
+        tx.append("testfile")?;
+        tx.append("testfile")?;
 
         let mut table_scan = TableScan::new(tx.clone(), "test_table", layout)?;
 
@@ -294,7 +294,7 @@ mod tests {
         let id1 = table_scan.get_int("id")?;
         
         table_scan.next()?;
-        let id2 = table_scan.get_int("id")?;
+        table_scan.get_int("id")?;
         
         table_scan.move_to_rid(rid)?;
         let id_check = table_scan.get_int("id")?;

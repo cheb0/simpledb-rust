@@ -41,7 +41,7 @@ impl LogRecord for SetIntRecord {
         self.tx_num
     }
 
-    fn undo(&self, tx_num: i32, tx: Transaction) -> DbResult<()> {
+    fn undo(&self, _tx_num: i32, tx: Transaction) -> DbResult<()> {
         tx.pin(&self.blk)?;
         tx.set_int(&self.blk, self.offset, self.val, false)?;
         tx.unpin(&self.blk);

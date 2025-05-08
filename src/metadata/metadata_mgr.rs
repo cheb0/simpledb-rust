@@ -23,7 +23,7 @@ impl MetadataMgr {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{buffer::buffer_mgr::BufferMgr, log::LogMgr, record::schema::{Schema, FieldType}, storage::file_mgr::FileMgr};
+    use crate::{buffer::buffer_mgr::BufferMgr, log::LogMgr, record::schema::Schema, storage::file_mgr::FileMgr};
     use std::sync::Arc;
     use tempfile::TempDir;
 
