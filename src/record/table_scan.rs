@@ -156,7 +156,7 @@ impl<'a> UpdateScan for TableScan<'a> {
     fn set_string(&mut self, field_name: &str, val: &str) -> DbResult<()> {
         let slot = self.current_slot.expect("No current record");
         let rp = self.record_page.as_ref().expect("Record page not initialized");
-        rp.set_string(slot, field_name, val.to_string())
+        rp.set_string(slot, field_name, val)
     }
 
     fn insert(&mut self) -> DbResult<()> {

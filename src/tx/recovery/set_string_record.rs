@@ -43,7 +43,7 @@ impl LogRecord for SetStringRecord {
 
     fn undo(&self, tx_num: i32, tx: Transaction) -> DbResult<()> {
         tx.pin(&self.blk)?;
-        tx.set_string(&self.blk, self.offset, self.val.clone(), false)?;
+        tx.set_string(&self.blk, self.offset, &self.val, false)?;
         tx.unpin(&self.blk);
         Ok(())
     }

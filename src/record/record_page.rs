@@ -37,7 +37,7 @@ impl<'a> RecordPage<'a> {
         self.tx.set_int(&self.blk, field_pos, val, true)
     }
 
-    pub fn set_string(&self, slot: usize, field_name: &str, val: String) -> DbResult<()> {
+    pub fn set_string(&self, slot: usize, field_name: &str, val: &str) -> DbResult<()> {
         let field_pos = self.offset(slot) + self.layout.offset(field_name)
             .expect("Field not found");
         self.tx.set_string(&self.blk, field_pos, val, true)
@@ -63,7 +63,7 @@ impl<'a> RecordPage<'a> {
                         self.tx.set_int(&self.blk, field_pos, 0, false)?;
                     }
                     FieldType::Varchar => {
-                        self.tx.set_string(&self.blk, field_pos, String::new(), false)?;
+                        self.tx.set_string(&self.blk, field_pos, "", false)?;
                     }
                 }
             }
@@ -155,7 +155,7 @@ mod tests {
             record_page.format()?;
             let slot = record_page.insert_after(0)?.expect("Failed to insert");
             record_page.set_int(slot, "id", 123)?;
-            record_page.set_string(slot, "name", "test".to_string())?;
+            record_page.set_string(slot, "name", "test")?;
             assert_eq!(record_page.get_int(slot, "id")?, 123);
             assert_eq!(record_page.get_string(slot, "name")?, "test");
             record_page.delete(slot)?;

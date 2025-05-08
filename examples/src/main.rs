@@ -82,7 +82,7 @@ fn prepare_database(db: &mut SimpleDB) -> DbResult<()> {
         let string_offset = INT_FIELDS_PER_BLOCK * 4;
         for j in 0..STRING_FIELDS_PER_BLOCK {
             let offset = string_offset + j * (STRING_LENGTH + 4); // string length + length prefix
-            tx.set_string(&blk, offset, format!("init-{}-{}", i, j), true)?;
+            tx.set_string(&blk, offset, &format!("init-{}-{}", i, j), true)?;
         }
         
         tx.unpin(&blk);
@@ -116,7 +116,7 @@ fn execute_random_operations_in_tx(db: &mut SimpleDB) -> DbResult<()> {
                 .map(|_| rng.gen_range(b'a'..=b'z') as char)
                 .collect();
                 
-            tx.set_string(&blk, offset, value, true)?;
+            tx.set_string(&blk, offset, &value, true)?;
         }
         
         tx.unpin(&blk);

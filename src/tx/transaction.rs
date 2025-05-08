@@ -144,7 +144,7 @@ impl<'a> Transaction<'a> {
         Ok(())
     }
 
-    pub fn set_string(&self, blk: &BlockId, offset: usize, val: String, log: bool) -> DbResult<()> {
+    pub fn set_string(&self, blk: &BlockId, offset: usize, val: &str, log: bool) -> DbResult<()> {
         let inner = self.inner.borrow();
         let guard = inner.buffers.get_buffer(blk)
             .ok_or_else(|| DbError::BufferNotFound(blk.clone()))?;
@@ -161,7 +161,7 @@ impl<'a> Transaction<'a> {
             buffer.set_modified(inner.tx_num, lsn);
         }
         
-        buffer.contents_mut().set_string(offset, &val);
+        buffer.contents_mut().set_string(offset, val);
         Ok(())
     }
 
@@ -210,7 +210,7 @@ mod tests {
         let blk = tx.append("testfile")?;
         tx.pin(&blk)?;
         tx.set_int(&blk, 0, 123, true)?;
-        tx.set_string(&blk, 100, "ABRACADABRA".to_string(), true)?;
+        tx.set_string(&blk, 100, "ABRACADABRA", true)?;
         
         let int_val = tx.get_int(&blk, 0)?;
         assert_eq!(int_val, 123);
@@ -234,7 +234,7 @@ mod tests {
 
         tx1.pin(&blk1)?;
         tx1.set_int(&blk1, 50, 777, true)?;
-        tx1.set_string(&blk1, 200, "ABC".to_string(), true)?;
+        tx1.set_string(&blk1, 200, "ABC", true)?;
         
         tx1.commit()?;
 
@@ -247,7 +247,7 @@ mod tests {
         assert_eq!(str_val, "ABC");
 
         tx2.set_int(&blk1, 50, 999, true)?;
-        tx2.set_string(&blk1, 200, "CDE".to_string(), true)?;
+        tx2.set_string(&blk1, 200, "CDE", true)?;
         tx2.rollback()?;
 
         let tx3: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
@@ -274,7 +274,7 @@ mod tests {
         tx1.pin(&blk1)?;
         tx1.set_int(&blk1, 50, 777, true)?;
         tx1.set_int(&blk1, 200, 123, true)?;
-        tx1.set_string(&blk1, 300, "ABC".to_string(), true)?;
+        tx1.set_string(&blk1, 300, "ABC", true)?;
         
         tx1.commit()?;
 
@@ -290,7 +290,7 @@ mod tests {
 
         tx2.set_int(&blk1, 50, 999, true)?;
         tx2.set_int(&blk1, 200, 234, true)?;
-        tx2.set_string(&blk1, 300, "CDE".to_string(), true)?;
+        tx2.set_string(&blk1, 300, "CDE", true)?;
         tx2.rollback()?;
 
         let tx3: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
