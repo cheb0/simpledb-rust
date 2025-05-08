@@ -123,7 +123,7 @@ impl<'a> Transaction<'a> {
         Ok(buffer.contents().get_string(offset))
     }
 
-    pub fn set_int(&self, blk: &BlockId, offset: usize, val: i32, log: bool) -> DbResult<()> {
+    pub fn set_int(&self, blk: &BlockId, offset: usize, val: i32, log: bool/*TODO should be true by default*/) -> DbResult<()> {
         let inner = self.inner.borrow();
         let guard = inner.buffers.get_buffer(blk)
             .ok_or_else(|| DbError::BufferNotFound(blk.clone()))?;
