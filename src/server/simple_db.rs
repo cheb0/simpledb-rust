@@ -1,14 +1,14 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::buffer::buffer_mgr::BufferMgr;
+use crate::buffer::BufferMgr;
 use crate::error::DbResult;
 use crate::log::LogMgr;
-use crate::metadata::metadata_mgr::MetadataMgr;
-use crate::storage::file_mgr::FileMgr;
-use crate::tx::transaction::Transaction;
+use crate::metadata::MetadataMgr;
+use crate::storage::FileMgr;
+use crate::tx::Transaction;
 
-use super::config::Config;
+use super::Config;
 
 pub struct SimpleDB<'a> {
     file_mgr: Arc<FileMgr>,
@@ -90,7 +90,7 @@ impl<'a> SimpleDB<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::record::schema::Schema;
+    use crate::record::Schema;
     use tempfile::TempDir;
 
     #[test]

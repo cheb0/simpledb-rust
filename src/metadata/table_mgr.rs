@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{error::DbResult, query::{Scan, UpdateScan}, record::{layout::Layout, schema::{FieldType, Schema}, table_scan::TableScan}, tx::transaction::Transaction};
+use crate::{error::DbResult, query::{Scan, UpdateScan}, record::{Layout, Schema, schema::{FieldType}, TableScan}, tx::Transaction};
 
 pub struct TableMgr {
     tcat_layout: Layout,
@@ -108,7 +108,7 @@ impl TableMgr {
 mod tests {
     use std::sync::Arc;
 
-    use crate::{buffer::buffer_mgr::BufferMgr, error::DbResult, log::LogMgr, metadata::table_mgr::TableMgr, record::schema::Schema, storage::file_mgr::FileMgr, tx::transaction::Transaction};
+    use crate::{buffer::BufferMgr, error::DbResult, log::LogMgr, metadata::TableMgr, record::Schema, storage::FileMgr, tx::Transaction};
     use tempfile::TempDir;
 
     #[test]

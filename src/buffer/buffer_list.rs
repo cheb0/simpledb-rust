@@ -1,8 +1,8 @@
 use std::collections::HashMap;
-use crate::storage::block_id::BlockId;
+use crate::storage::BlockId;
 use crate::error::DbResult;
 
-use super::buffer_mgr::{BufferMgr, PinnedBufferGuard};
+use super::{BufferMgr, PinnedBufferGuard};
 
 // TODO currently this class duplicates BufferMgr functionality
 pub struct BufferList<'a> {

@@ -3,7 +3,7 @@ use std::any::Any;
 use bincode::deserialize;
 
 use crate::error::DbResult;
-use crate::tx::transaction::Transaction;
+use crate::tx::Transaction;
 
 use super::checkpoint_record::CheckpointRecord;
 use super::commit_record::CommitRecord;

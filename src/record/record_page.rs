@@ -1,7 +1,7 @@
 use crate::error::DbResult;
-use crate::storage::block_id::BlockId;
-use crate::tx::transaction::Transaction;
-use super::layout::Layout;
+use crate::storage::BlockId;
+use crate::tx::Transaction;
+use super::Layout;
 use super::schema::FieldType;
 
 const EMPTY: i32 = 0;
@@ -126,7 +126,7 @@ mod tests {
     use crate::record::schema::Schema;
     use crate::storage::file_mgr::FileMgr;
     use crate::log::LogMgr;
-    use crate::buffer::buffer_mgr::BufferMgr;
+    use crate::buffer::BufferMgr;
     use std::sync::Arc;
     use tempfile::TempDir;
 

@@ -3,7 +3,7 @@ use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::error::{DbError, DbResult};
-use crate::storage::block_id::BlockId;
+use crate::storage::BlockId;
 
 /// LockTable - currently follows an original design, uses a single lock for all blocks. Need to redo
 pub struct LockTable {

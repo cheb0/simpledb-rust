@@ -3,7 +3,7 @@ use std::any::Any;
 use bincode::serialize;
 use serde::{Deserialize, Serialize};
 
-use crate::{error::DbResult, tx::transaction::Transaction};
+use crate::{error::DbResult, tx::Transaction};
 
 use super::log_record::{LogRecord, COMMIT_FLAG};
 

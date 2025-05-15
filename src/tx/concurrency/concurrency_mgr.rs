@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::error::DbResult;
-use crate::storage::block_id::BlockId;
+use crate::storage::BlockId;
 use super::lock_table::LockTable;
 
 #[derive(Debug, Clone, PartialEq)]

@@ -1,6 +1,6 @@
 use crate::error::DbResult;
 use crate::query::{Scan, UpdateScan, Predicate, Constant};
-use crate::record::{schema::Schema, row_id::RowId};
+use crate::record::{Schema, RowId};
 
 /// A scan that filters records based on a predicate.
 pub struct SelectScan<'a> {
@@ -90,7 +90,7 @@ mod tests {
     use std::sync::Arc;
     use tempfile::TempDir;
     use crate::{
-        buffer::buffer_mgr::BufferMgr,
+        buffer::BufferMgr,
         log::LogMgr,
         query::{Constant, Expression, Predicate, Scan, Term, UpdateScan},
         record::{schema::Schema, table_scan::TableScan},

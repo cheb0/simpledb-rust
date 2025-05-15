@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use super::schema::{Schema, FieldType};
-use crate::storage::page::Page;
+use crate::storage::Page;
 
 #[derive(Debug, Clone)]
 pub struct Layout {

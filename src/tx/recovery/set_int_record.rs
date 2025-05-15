@@ -3,7 +3,7 @@ use std::any::Any;
 use bincode::serialize;
 use serde::{Deserialize, Serialize};
 
-use crate::{error::DbResult, storage::block_id::BlockId, tx::transaction::Transaction};
+use crate::{error::DbResult, storage::BlockId, tx::Transaction};
 
 use super::log_record::{LogRecord, SETINT_FLAG};
 
@@ -57,7 +57,7 @@ impl LogRecord for SetIntRecord {
 mod tests {
     use super::*;
     use crate::tx::recovery::log_record::create_log_record;
-    use crate::storage::block_id::BlockId;
+    use crate::storage::BlockId;
 
     #[test]
     fn test_set_int_record_serialization() -> crate::error::DbResult<()> {

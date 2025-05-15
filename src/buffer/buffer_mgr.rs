@@ -4,8 +4,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::error::{DbError, DbResult};
-use crate::storage::block_id::BlockId;
-use crate::buffer::buffer::Buffer;
+use crate::storage::BlockId;
+use crate::buffer::Buffer;
 use crate::storage::file_mgr::FileMgr;
 use crate::log::LogMgr;
 
@@ -172,7 +172,7 @@ mod tests {
     use super::*;
     use std::thread;
     use std::sync::{Arc, Barrier};
-    use crate::storage::file_mgr::FileMgr;
+    use crate::storage::FileMgr;
     use crate::log::LogMgr;
     use tempfile::TempDir;
 

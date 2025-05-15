@@ -1,4 +1,4 @@
-use simpledb::{storage::block_id::BlockId, tx::transaction::Transaction, DbResult, SimpleDB};
+use simpledb::{storage::BlockId, tx::Transaction, DbResult, SimpleDB};
 
 use std::time::{Duration, Instant};
 use rand::Rng;

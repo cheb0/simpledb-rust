@@ -6,8 +6,7 @@ use std::sync::Mutex;
 
 use crate::error::DbResult;
 
-use super::block_id::BlockId;
-use super::page::Page;
+use super::{BlockId, Page};
 
 /// Manages the database files, handling reading and writing of pages to disk.
 pub struct FileMgr {

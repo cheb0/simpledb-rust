@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc, sync::{atomic::{AtomicI32, Ordering}, Arc}};
-use crate::{error::DbError, storage::{block_id::BlockId, file_mgr::FileMgr}};
-use crate::buffer::{buffer_mgr::BufferMgr, buffer_list::BufferList};
+use crate::{error::DbError, storage::{BlockId, FileMgr}};
+use crate::buffer::{BufferMgr, BufferList};
 use crate::log::LogMgr;
 use crate::error::DbResult;
 

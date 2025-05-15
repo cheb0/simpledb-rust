@@ -1,7 +1,7 @@
 use std::io;
 use std::sync::{Arc, Mutex};
 
-use crate::storage::block_id::BlockId;
+use crate::storage::BlockId;
 use crate::storage::file_mgr::FileMgr;
 use crate::storage::page::Page;
 

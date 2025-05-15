@@ -1,5 +1,6 @@
-use crate::{error::DbResult, record::schema::Schema, record::layout::Layout, tx::transaction::Transaction};
-use super::table_mgr::TableMgr;
+use crate::{error::DbResult, record::Schema, record::Layout, tx::Transaction};
+
+use super::TableMgr;
 
 pub struct MetadataMgr {
     table_mgr: TableMgr,
@@ -23,7 +24,7 @@ impl MetadataMgr {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{buffer::buffer_mgr::BufferMgr, log::LogMgr, record::schema::Schema, storage::file_mgr::FileMgr};
+    use crate::{buffer::BufferMgr, log::LogMgr, record::Schema, storage::FileMgr};
     use std::sync::Arc;
     use tempfile::TempDir;
 

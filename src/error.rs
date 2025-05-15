@@ -1,7 +1,7 @@
 use thiserror::Error;
 use bincode;
 
-use crate::storage::block_id::BlockId;
+use crate::storage::BlockId;
 
 #[derive(Error, Debug)]
 pub enum DbError {

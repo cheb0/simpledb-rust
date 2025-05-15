@@ -1,7 +1,7 @@
 use crate::error::DbResult;
-use crate::query::constant::Constant;
-use crate::query::scan::Scan;
-use crate::record::row_id::RowId;
+use crate::query::Constant;
+use crate::query::Scan;
+use crate::record::RowId;
 
 /// The `UpdateScan` trait extends `Scan` with methods for modifying records.
 pub trait UpdateScan: Scan {

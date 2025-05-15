@@ -1,9 +1,9 @@
-use crate::storage::block_id::BlockId;
-use crate::tx::transaction::Transaction;
+use crate::storage::BlockId;
+use crate::tx::Transaction;
 use crate::error::{DbError, DbResult};
 use crate::query::{Constant, Scan, UpdateScan};
 use super::layout::Layout;
-use super::record_page::RecordPage;
+use super::RecordPage;
 use super::row_id::RowId;
 use super::schema::{FieldType, Schema};
 
@@ -216,7 +216,7 @@ impl<'a> UpdateScan for TableScan<'a> {
 mod tests {
     use std::sync::Arc;
     use tempfile::TempDir;
-    use crate::{buffer::buffer_mgr::BufferMgr, log::LogMgr, query::{Scan, UpdateScan}, record::schema::Schema, storage::file_mgr::FileMgr};
+    use crate::{buffer::BufferMgr, log::LogMgr, query::{Scan, UpdateScan}, record::schema::Schema, storage::file_mgr::FileMgr};
 
     use super::*;
 

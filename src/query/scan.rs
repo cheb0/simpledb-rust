@@ -1,6 +1,6 @@
-use crate::record::schema::Schema;
+use crate::record::Schema;
 use crate::error::DbResult;
-use crate::query::constant::Constant;
+use crate::query::Constant;
 
 /// The `Scan` trait provides an interface for iterating through records in a database.
 pub trait Scan {

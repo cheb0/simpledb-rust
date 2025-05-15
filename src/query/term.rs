@@ -1,6 +1,6 @@
 use crate::error::DbResult;
 use crate::query::{Constant, Scan};
-use crate::record::schema::Schema;
+use crate::record::Schema;
 
 use super::Expression;
 
