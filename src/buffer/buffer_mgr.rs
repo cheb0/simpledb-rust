@@ -104,7 +104,6 @@ impl BufferMgr {
             inner.pins[idx] += 1;
             
             let mut buffer = self.buffers[idx].borrow_mut();
-            buffer.pin();
             
             return Ok(Some(idx));
         }
@@ -116,7 +115,6 @@ impl BufferMgr {
             
             let mut buffer = self.buffers[idx].borrow_mut();
             buffer.assign_to_block(blk.clone())?;
-            buffer.pin();
             
             return Ok(Some(idx));
         }
@@ -139,9 +137,8 @@ impl BufferMgr {
         let mut buffer = self.buffers[idx].borrow_mut();
         
         inner.pins[idx] -= 1;
-        buffer.unpin();
 
-        if !buffer.is_pinned() && inner.pins[idx] == 0 {
+        if inner.pins[idx] == 0 {
             if let Some(block) = buffer.block() {
                 inner.block_to_buffer_idx.remove(&block);
             }

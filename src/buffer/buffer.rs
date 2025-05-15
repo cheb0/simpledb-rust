@@ -12,7 +12,6 @@ pub struct Buffer {
     log_mgr: Arc<LogMgr>,
     contents: Page,
     block_id: Option<BlockId>,
-    pins: i32,
     tx_num: i32,
     lsn: i32,
 }
@@ -25,7 +24,6 @@ impl Buffer {
             log_mgr,
             contents: Page::new(block_size),
             block_id: None,
-            pins: 0,
             tx_num: -1,
             lsn: -1,
         }
@@ -50,10 +48,6 @@ impl Buffer {
         }
     }
 
-    pub fn is_pinned(&self) -> bool {
-        self.pins > 0
-    }
-
     pub fn modifying_tx(&self) -> i32 {
         self.tx_num
     }
@@ -65,7 +59,6 @@ impl Buffer {
         self.flush()?;
         self.block_id = Some(blk.clone());
         self.file_mgr.read(&blk, &mut self.contents)?;
-        self.pins = 0;
         Ok(())
     }
 
@@ -78,13 +71,5 @@ impl Buffer {
             self.tx_num = -1;
         }
         Ok(())
-    }
-
-    pub fn pin(&mut self) {
-        self.pins += 1;
-    }
-
-    pub fn unpin(&mut self) {
-        self.pins -= 1;
     }
 }
