@@ -5,7 +5,7 @@ use super::Term;
 
 /// Represents a predicate that combines multiple terms with AND (conjunction).
 /// A predicate is satisfied only if all its terms are satisfied.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Predicate {
     terms: Vec<Term>,
 }
@@ -17,8 +17,14 @@ impl Predicate {
         }
     }
 
-    pub fn conjoin_with(&mut self, other: Predicate) {
+    pub fn conjoin_with(mut self, other: Predicate) -> Self {
         self.terms.extend(other.terms);
+        self
+    }
+
+    pub fn with_term(mut self, term: Term) -> Self {
+        self.terms.push(term);
+        self
     }
 
     pub fn is_satisfied(&self, s: &mut dyn Scan) -> DbResult<bool> {
