@@ -5,6 +5,7 @@ pub mod expression;
 pub mod term;
 pub mod predicate;
 pub mod select_scan;
+pub mod project_scan;
 
 pub use constant::Constant;
 pub use scan::Scan;

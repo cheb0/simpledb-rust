@@ -1,5 +1,5 @@
 use crate::error::DbResult;
-use crate::query::{Constant, Scan};
+use crate::query::Scan;
 use crate::record::Schema;
 
 use super::Expression;

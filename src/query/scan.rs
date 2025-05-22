@@ -1,4 +1,3 @@
-use crate::record::Schema;
 use crate::error::DbResult;
 use crate::query::Constant;
 
@@ -15,5 +14,4 @@ pub trait Scan {
     fn has_field(&self, field_name: &str) -> bool;
     
     fn close(&mut self);
-    fn schema(&self) -> &Schema;
 } 

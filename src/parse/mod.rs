@@ -3,7 +3,7 @@ use sqlparser::parser::Parser as SqlParser;
 use sqlparser::ast::{CharacterLength, DataType, Expr, SetExpr, Statement as SqlStatement, Value};
 
 use crate::error::{DbError, DbResult};
-use crate::record::schema::{Schema, FieldType};
+use crate::record::schema::Schema;
 use crate::query::{Constant, Expression, Term};
 use crate::query::predicate::Predicate;
 
@@ -223,6 +223,8 @@ impl Parser {
 
 #[cfg(test)]
 mod tests {
+    use crate::record::schema::FieldType;
+
     use super::*;
 
     #[test]

@@ -103,7 +103,7 @@ impl BufferMgr {
             }
             inner.pins[idx] += 1;
             
-            let mut buffer = self.buffers[idx].borrow_mut();
+            let _buffer = self.buffers[idx].borrow_mut();
             
             return Ok(Some(idx));
         }
@@ -134,7 +134,7 @@ impl BufferMgr {
     
     fn unpin_internal(&self, idx: usize) {
         let mut inner = self.inner.lock().unwrap();
-        let mut buffer = self.buffers[idx].borrow_mut();
+        let buffer = self.buffers[idx].borrow_mut();
         
         inner.pins[idx] -= 1;
 

@@ -5,18 +5,18 @@ use crate::query::{Constant, Scan, UpdateScan};
 use super::layout::Layout;
 use super::RecordPage;
 use super::row_id::RowId;
-use super::schema::{FieldType, Schema};
+use super::schema::FieldType;
 
-pub struct TableScan<'a> {
-    tx: Transaction<'a>,
+pub struct TableScan<'tx> {
+    tx: Transaction<'tx>,
     layout: Layout,
-    record_page: Option<RecordPage<'a>>,
+    record_page: Option<RecordPage<'tx>>,
     file_name: String,
     current_slot: Option<usize>,
 }
 
-impl<'a> TableScan<'a> {
-    pub fn new(tx: Transaction<'a>, table_name: &str, layout: Layout) -> DbResult<Self> {
+impl<'tx> TableScan<'tx> {
+    pub fn new(tx: Transaction<'tx>, table_name: &str, layout: Layout) -> DbResult<Self> {
         let file_name = format!("{}.tbl", table_name);
         let mut table_scan = TableScan {
             tx,
@@ -76,7 +76,7 @@ impl<'a> TableScan<'a> {
     }
 }
 
-impl<'a> Scan for TableScan<'a> {
+impl<'tx> Scan for TableScan<'tx> {
     fn before_first(&mut self) -> DbResult<()> {
         self.move_to_block(0)
     }
@@ -133,13 +133,9 @@ impl<'a> Scan for TableScan<'a> {
     fn close(&mut self) {
         self.record_page.take();
     }
-    
-    fn schema(&self) -> &Schema {
-        self.layout.schema()
-    }
 }
 
-impl<'a> UpdateScan for TableScan<'a> {
+impl<'tx> UpdateScan for TableScan<'tx> {
     fn set_val(&mut self, field_name: &str, val: Constant) -> DbResult<()> {
         match val {
             Constant::Integer(i) => self.set_int(field_name, i),

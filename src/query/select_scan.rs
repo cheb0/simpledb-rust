@@ -1,6 +1,6 @@
 use crate::error::DbResult;
 use crate::query::{Scan, UpdateScan, Predicate, Constant};
-use crate::record::{Schema, RowId};
+use crate::record::{RowId};
 
 /// A scan that filters records based on a predicate.
 pub struct SelectScan<'a> {
@@ -48,10 +48,6 @@ impl<'a> Scan for SelectScan<'a> {
 
     fn close(&mut self) {
         self.s.close();
-    }
-
-    fn schema(&self) -> &Schema {
-        self.s.schema()
     }
 }
 
