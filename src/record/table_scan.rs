@@ -4,7 +4,7 @@ use crate::error::{DbError, DbResult};
 use crate::query::{Constant, Scan, UpdateScan};
 use super::layout::Layout;
 use super::RecordPage;
-use super::row_id::RowId;
+use super::rid::RID;
 use super::schema::FieldType;
 
 pub struct TableScan<'tx> {
@@ -192,13 +192,13 @@ impl<'tx> UpdateScan for TableScan<'tx> {
         rp.delete(slot)
     }
 
-    fn get_rid(&self) -> DbResult<RowId> {
+    fn get_rid(&self) -> DbResult<RID> {
         let slot = self.current_slot.expect("No current record");
         let record_page = self.record_page.as_ref().expect("Record page not initialized");
-        Ok(RowId::new(record_page.block().number(), slot))
+        Ok(RID::new(record_page.block().number(), slot))
     }
 
-    fn move_to_rid(&mut self, row_id: RowId) -> DbResult<()> {
+    fn move_to_rid(&mut self, row_id: RID) -> DbResult<()> {
         self.record_page.take();
 
         let blk = BlockId::new(self.file_name.clone(), row_id.block_number());

@@ -1,11 +1,11 @@
-pub struct RowId {
+pub struct RID {
     block_number: i32,
     slot: usize,
 }
 
-impl RowId {
+impl RID {
     pub fn new(block_number: i32, slot: usize) -> Self {
-        RowId { block_number, slot }
+        RID { block_number, slot }
     }
     
     pub fn block_number(&self) -> i32 {

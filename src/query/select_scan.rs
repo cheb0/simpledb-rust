@@ -1,6 +1,6 @@
 use crate::error::DbResult;
 use crate::query::{Scan, UpdateScan, Predicate, Constant};
-use crate::record::{RowId};
+use crate::record::{RID};
 
 /// A scan that filters records based on a predicate.
 pub struct SelectScan<'a> {
@@ -72,11 +72,11 @@ impl<'a> UpdateScan for SelectScan<'a> {
         self.s.delete()
     }
 
-    fn get_rid(&self) -> DbResult<RowId> {
+    fn get_rid(&self) -> DbResult<RID> {
         self.s.get_rid()
     }
 
-    fn move_to_rid(&mut self, rid: RowId) -> DbResult<()> {
+    fn move_to_rid(&mut self, rid: RID) -> DbResult<()> {
         self.s.move_to_rid(rid)
     }
 }
