@@ -1,5 +1,5 @@
 use crate::plan::Plan;
-use crate::query::{Scan, UpdateScan, Predicate, SelectScan};
+use crate::query::{Scan, Predicate, SelectScan};
 use crate::record::schema::Schema;
 use crate::tx::Transaction;
 

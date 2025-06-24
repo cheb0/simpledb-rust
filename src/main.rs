@@ -1,54 +1,40 @@
-use simpledb::{plan::{project_plan::ProjectPlan, table_plan::TablePlan, Plan}, query::UpdateScan, record::{Layout, Schema, TableScan}, DbResult, SimpleDB};
+use simpledb::{DbResult, SimpleDB};
 use tempfile::TempDir;
 
 fn main() -> DbResult<()> {
     let temp_dir = TempDir::new().unwrap();
-    println!("Temp dir:{:?}", temp_dir);
-    
-    let db = SimpleDB::new(temp_dir)?;
-    
-    let mut schema = Schema::new();
-    schema.add_int_field("id");
-    schema.add_string_field("name", 20);
+    println!("Test database directory: {:?}", temp_dir.path());
 
-    let layout = Layout::new(schema.clone());
+    let db = SimpleDB::new(temp_dir.path())?;
+    let planner = db.planner();
 
     {
         let tx = db.new_tx()?;
-    
-        db.metadata_mgr().create_table("test_table", &schema, tx.clone())?;
-    
-        {
-            let mut scan = TableScan::new(tx.clone(), "test_table", layout.clone())?;
-    
-            scan.insert()?;
-            scan.set_int("id", 1)?;
-            scan.set_string("name", "Alice")?;
-            
-            scan.insert()?;
-            scan.set_int("id", 2)?;
-            scan.set_string("name", "Bob")?;
-            
-            scan.insert()?;
-            scan.set_int("id", 3)?;
-            scan.set_string("name", "Charlie")?;
-        }
+        let upd = planner.execute_update("create table test_table(id int, name VARCHAR(20), age int)", tx.clone())?;
+        println!("Create table: {:?}", upd);
         tx.commit()?;
     }
 
     {
         let tx = db.new_tx()?;
-        let table_plan = TablePlan::new(tx.clone(), "test_table", &db.metadata_mgr())?;
-        let project_plan = ProjectPlan::new(Box::new(table_plan), vec!["name".to_string()]);
-        
-        let mut scan = project_plan.open();
+        db.planner().execute_update("insert into test_table(id, name, age) values(1, 'John', 25)", tx.clone())?;
+        db.planner().execute_update("insert into test_table(id, name, age) values(2, 'Jack', 21)", tx.clone())?;
+        db.planner().execute_update("insert into test_table(id, name, age) values(3, 'Alice', 22)", tx.clone())?;
+        db.planner().execute_update("insert into test_table(id, name, age) values(4, 'Bob', 24)", tx.clone())?;
+        db.planner().execute_update("insert into test_table(id, name, age) values(5, 'Chad', 26)", tx.clone())?;
+        tx.commit()?;
+    }
+
+    {
+        let tx = db.new_tx()?;
+        let plan = db.planner().create_query_plan("SELECT id, name FROM test_table WHERE id = 3", tx.clone())?;
+        let mut scan = plan.open(tx.clone());
 
         scan.before_first()?;
-
         while scan.next()? {
-            // let id = scan.get_int("id")?;
+            let id = scan.get_int("id")?;
             let name = scan.get_string("name")?;
-            println!("name: {}", name);
+            println!("id={:} with name={:}", id, name);
         }
 
         tx.commit()?;
