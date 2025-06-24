@@ -21,7 +21,7 @@ pub enum Statement {
     Query {
         fields: Vec<String>,
         tables: Vec<String>,
-        predicate: Predicate,
+        predicate: Option<Predicate>,
     },
 }
 
@@ -170,11 +170,10 @@ impl Parser {
                     })
                     .collect::<DbResult<Vec<String>>>()?;
 
-                // Parse WHERE clause into Predicate
                 let predicate = if let Some(where_clause) = &select.selection {
-                    self.parse_where_clause(where_clause)?
+                    Some(self.parse_where_clause(where_clause)?)
                 } else {
-                    Predicate::default()
+                    None
                 };
 
                 Ok(Statement::Query {

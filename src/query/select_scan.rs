@@ -1,29 +1,27 @@
 use crate::error::DbResult;
-use crate::query::{Scan, UpdateScan, Predicate, Constant};
+use crate::query::{Scan, Predicate, Constant};
 use crate::record::{RID};
 
 /// A scan that filters records based on a predicate.
 pub struct SelectScan<'a> {
-    s: Box<dyn UpdateScan + 'a>,
+    scan: Box<dyn Scan + 'a>,
     pred: Predicate,
 }
 
 impl<'a> SelectScan<'a> {
-    /// Creates a new select scan that filters records from the underlying scan
-    /// based on the given predicate.
-    pub fn new(s: Box<dyn UpdateScan + 'a>, pred: Predicate) -> Self {
-        SelectScan { s, pred }
+    pub fn new(s: Box<dyn Scan + 'a>, pred: Predicate) -> Self {
+        SelectScan { scan: s, pred }
     }
 }
 
 impl<'a> Scan for SelectScan<'a> {
     fn before_first(&mut self) -> DbResult<()> {
-        self.s.before_first()
+        self.scan.before_first()
     }
 
     fn next(&mut self) -> DbResult<bool> {
-        while self.s.next()? {
-            if self.pred.is_satisfied(&mut *self.s)? {
+        while self.scan.next()? {
+            if self.pred.is_satisfied(&mut *self.scan)? {
                 return Ok(true);
             }
         }
@@ -31,55 +29,55 @@ impl<'a> Scan for SelectScan<'a> {
     }
 
     fn get_int(&mut self, field_name: &str) -> DbResult<i32> {
-        self.s.get_int(field_name)
+        self.scan.get_int(field_name)
     }
 
     fn get_string(&mut self, field_name: &str) -> DbResult<String> {
-        self.s.get_string(field_name)
+        self.scan.get_string(field_name)
     }
 
     fn get_val(&mut self, field_name: &str) -> DbResult<Constant> {
-        self.s.get_val(field_name)
+        self.scan.get_val(field_name)
     }
 
     fn has_field(&self, field_name: &str) -> bool {
-        self.s.has_field(field_name)
+        self.scan.has_field(field_name)
     }
 
     fn close(&mut self) {
-        self.s.close();
+        self.scan.close();
     }
 }
 
-impl<'a> UpdateScan for SelectScan<'a> {
+/* impl<'a> UpdateScan for SelectScan<'a> {
     fn set_val(&mut self, field_name: &str, val: Constant) -> DbResult<()> {
-        self.s.set_val(field_name, val)
+        self.scan.set_val(field_name, val)
     }
 
     fn set_int(&mut self, field_name: &str, val: i32) -> DbResult<()> {
-        self.s.set_int(field_name, val)
+        self.scan.set_int(field_name, val)
     }
 
     fn set_string(&mut self, field_name: &str, val: &str) -> DbResult<()> {
-        self.s.set_string(field_name, val)
+        self.scan.set_string(field_name, val)
     }
 
     fn insert(&mut self) -> DbResult<()> {
-        self.s.insert()
+        self.scan.insert()
     }
 
     fn delete(&mut self) -> DbResult<()> {
-        self.s.delete()
+        self.scan.delete()
     }
 
     fn get_rid(&self) -> DbResult<RID> {
-        self.s.get_rid()
+        self.scan.get_rid()
     }
 
     fn move_to_rid(&mut self, rid: RID) -> DbResult<()> {
-        self.s.move_to_rid(rid)
+        self.scan.move_to_rid(rid)
     }
-}
+} */
 
 #[cfg(test)]
 mod tests {

@@ -2,15 +2,16 @@ use crate::plan::Plan;
 use crate::query::Scan;
 use crate::record::schema::Schema;
 use crate::query::project_scan::ProjectScan;
+use crate::tx::Transaction;
 
-pub struct ProjectPlan<'tx> {
-    plan: Box<dyn Plan<'tx> + 'tx>,
+pub struct ProjectPlan {
+    plan: Box<dyn Plan>,
     schema: Schema,
     fieldlist: Vec<String>,
 }
 
-impl<'tx> ProjectPlan<'tx> {
-    pub fn new(plan: Box<dyn Plan<'tx> + 'tx>, fields: Vec<String>) -> Self {
+impl ProjectPlan {
+    pub fn new(plan: Box<dyn Plan>, fields: Vec<String>) -> Self {
         let mut schema = Schema::new();
         for field in &fields {
             schema.add_from_schema(field, &plan.schema());
@@ -19,9 +20,9 @@ impl<'tx> ProjectPlan<'tx> {
     }
 }
 
-impl<'tx> Plan<'tx> for ProjectPlan<'tx> {
-    fn open(&self) -> Box<dyn Scan + 'tx> {
-        let scan = self.plan.open();
+impl Plan for ProjectPlan {
+    fn open<'tx>(&self, tx: Transaction<'tx>) -> Box<dyn Scan + 'tx> {
+        let scan = self.plan.open(tx);
         Box::new(ProjectScan::new(scan, self.fieldlist.clone()))
     }
 

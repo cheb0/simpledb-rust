@@ -5,6 +5,8 @@ use crate::buffer::BufferMgr;
 use crate::error::DbResult;
 use crate::log::LogMgr;
 use crate::metadata::MetadataMgr;
+
+use crate::plan::Planner;
 use crate::storage::FileMgr;
 use crate::tx::Transaction;
 
@@ -14,6 +16,7 @@ pub struct SimpleDB<'a> {
     file_mgr: Arc<FileMgr>,
     log_mgr: Arc<LogMgr>,
     buffer_mgr: &'a BufferMgr,
+    planner: Planner,
     metadata_mgr: Arc<MetadataMgr>,
 }
 
@@ -37,14 +40,16 @@ impl<'a> SimpleDB<'a> {
             &buffer_mgr,
         )?;
         
-        let md_mgr = MetadataMgr::new(file_mgr.is_new(), tx.clone())?;
+        let md_mgr = Arc::new(MetadataMgr::new(file_mgr.is_new(), tx.clone())?);
+        let planner = Planner::new(Arc::clone(&md_mgr));
         tx.commit()?;
     
         Ok(Self {
             file_mgr,
             log_mgr,
             buffer_mgr: buffer_mgr,
-            metadata_mgr: Arc::new(md_mgr),
+            metadata_mgr: md_mgr,
+            planner: planner,
         })
     }
 
@@ -84,6 +89,10 @@ impl<'a> SimpleDB<'a> {
 
     pub fn metadata_mgr(&self) -> Arc<MetadataMgr> {
         self.metadata_mgr.clone()
+    }
+
+    pub fn planner(&self) -> &Planner {
+        &self.planner
     }
 }
 
