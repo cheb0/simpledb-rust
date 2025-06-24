@@ -1,5 +1,6 @@
 /target
 /examples/target
+/tests/target
 /.idea
 /perf.data
 /perf.data.old
