@@ -18,6 +18,12 @@ pub enum Statement {
         fields: Vec<String>,
         values: Vec<Constant>,
     },
+    Update {
+        table_name: String,
+        fields: Vec<String>,
+        values: Vec<Constant>,
+        predicate: Option<Predicate>,
+    },
     Query {
         fields: Vec<String>,
         tables: Vec<String>,
@@ -47,6 +53,13 @@ impl Parser {
         match &ast[0] {
             SqlStatement::CreateTable(create_table) => self.parse_create_table(create_table),
             SqlStatement::Insert(insert) => self.parse_insert(insert),
+            SqlStatement::Update { table, assignments, selection, .. } => {
+                let table_name = match &table.relation {
+                    sqlparser::ast::TableFactor::Table { name, .. } => name.to_string(),
+                    _ => return Err(DbError::Schema("Only simple table references are supported in UPDATE".to_string())),
+                };
+                self.parse_update(&table_name, assignments, selection)
+            },
             SqlStatement::Query(query) => self.parse_select(&query.body),
             _ => Err(DbError::Schema("Unsupported SQL statement".to_string())),
         }
@@ -140,10 +153,45 @@ impl Parser {
         })
     }
 
+    fn parse_update(&self, table_name: &str, assignments: &[sqlparser::ast::Assignment], selection: &Option<Expr>) -> DbResult<Statement> {
+        let mut fields = Vec::new();
+        let mut values = Vec::new();
+        
+        for assignment in assignments {
+            let field_name = assignment.target.to_string();
+            fields.push(field_name);
+            
+            let value = match &assignment.value {
+                Expr::Value(value) => match &value.value {
+                    Value::SingleQuotedString(s) => Ok(Constant::String(s.clone())),
+                    Value::Number(n, _) => Ok(Constant::Integer(n.parse().map_err(|_| {
+                        DbError::Schema(format!("Invalid integer value: {}", n))
+                    })?)),
+                    _ => Err(DbError::Schema("Unsupported value type in UPDATE".to_string())),
+                },
+                _ => Err(DbError::Schema("Only simple values are supported in UPDATE".to_string())),
+            }?;
+            
+            values.push(value);
+        }
+        
+        let predicate = if let Some(where_clause) = selection {
+            Some(self.parse_where_clause(where_clause)?)
+        } else {
+            None
+        };
+        
+        Ok(Statement::Update {
+            table_name: table_name.to_string(),
+            fields,
+            values,
+            predicate,
+        })
+    }
+
     fn parse_select(&self, query: &SetExpr) -> DbResult<Statement> {
         return match query {
             SetExpr::Select(select) => {
-                // Parse fields (columns)
                 let fields = select.projection.iter()
                 .map(|item| match item {
                     sqlparser::ast::SelectItem::UnnamedExpr(Expr::Identifier(ident)) => {
@@ -321,5 +369,75 @@ mod tests {
         }
         
         Ok(())
+    }
+
+    #[test]
+    fn test_parse_update() -> DbResult<()> {
+        let parser = Parser::new();
+        let sql = "UPDATE test_table SET name = 'Bob', age = 30 WHERE id = 1";
+        
+        let stmt = parser.parse(sql)?;
+        
+        match stmt {
+            Statement::Update { table_name, fields, values, predicate } => {
+                assert_eq!(table_name, "test_table");
+                assert_eq!(fields, vec!["name", "age"]);
+                assert_eq!(values.len(), 2);
+                assert_eq!(values[0], Constant::String("Bob".to_string()));
+                assert_eq!(values[1], Constant::Integer(30));
+            }
+            _ => panic!("Unexpected statement"),
+        }
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_update_no_where() -> DbResult<()> {
+        let parser = Parser::new();
+        let sql = "UPDATE test_table SET age = 25";
+        
+        let stmt = parser.parse(sql)?;
+        
+        match stmt {
+            Statement::Update { table_name, fields, values, predicate } => {
+                assert_eq!(table_name, "test_table");
+                assert_eq!(fields, vec!["age"]);
+                assert_eq!(values.len(), 1);
+                assert_eq!(values[0], Constant::Integer(25));
+                assert!(predicate.is_none());
+            }
+            _ => panic!("Unexpected statement"),
+        }
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_update_single_field() -> DbResult<()> {
+        let parser = Parser::new();
+        let sql = "UPDATE users SET name = 'Alice' WHERE id = 5";
+        
+        let stmt = parser.parse(sql)?;
+        
+        match stmt {
+            Statement::Update { table_name, fields, values, predicate } => {
+                assert_eq!(table_name, "users");
+                assert_eq!(fields, vec!["name"]);
+                assert_eq!(values.len(), 1);
+                assert_eq!(values[0], Constant::String("Alice".to_string()));
+            }
+            _ => panic!("Unexpected statement"),
+        }
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_update_invalid() {
+        let parser = Parser::new();
+        let sql = "UPDATE test_table SET"; // Incomplete statement
+        
+        assert!(parser.parse(sql).is_err());
     }
 }

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{metadata::MetadataMgr, parse::{Parser, Statement}, plan::{project_plan::ProjectPlan, select_plan::SelectPlan, table_plan::TablePlan, Plan}, query::UpdateScan, record::{Schema, TableScan}, tx::Transaction, DbResult};
+use crate::{metadata::MetadataMgr, parse::{Parser, Statement}, plan::{project_plan::ProjectPlan, select_plan::SelectPlan, table_plan::TablePlan, Plan}, query::{Scan, UpdateScan}, record::{Schema, TableScan}, tx::Transaction, DbResult};
 
 pub struct Planner {
     parser: Parser,
@@ -50,22 +50,25 @@ impl Planner {
             Statement::Insert { table_name, fields, values } => {
                 self.execute_insert(&table_name, &fields, &values, tx)
             }
+            Statement::Update { table_name, fields, values, predicate } => {
+                self.execute_update_statement(&table_name, &fields, &values, predicate, tx)
+            }
             Statement::CreateTable { table_name, schema } => {
                 self.execute_create_table(&table_name, &schema, tx)
             }
-            _ => Err(crate::error::DbError::Schema("Only INSERT and CREATE TABLE statements are supported for updates".to_string())),
+            _ => Err(crate::error::DbError::Schema("Only INSERT, UPDATE and CREATE TABLE statements are supported for updates".to_string())),
         }
     }
     
     fn execute_insert(&self, table_name: &str, fields: &[String], values: &[crate::query::Constant], tx: Transaction<'_>) -> DbResult<i32> {
         let layout = self.metadata_mgr.get_layout(table_name, tx.clone())?;
-        let mut table_scan = TableScan::new(tx.clone(), table_name, layout)?;
+        let mut scan = TableScan::new(tx.clone(), table_name, layout)?;
         
-        table_scan.insert()?;
+        scan.insert()?;
         for (field, value) in fields.iter().zip(values.iter()) {
-            table_scan.set_val(field, value.clone())?;
+            scan.set_val(field, value.clone())?;
         }
-        table_scan.close();
+        scan.close();
         
         Ok(1)
     }
@@ -73,5 +76,37 @@ impl Planner {
     fn execute_create_table(&self, table_name: &str, schema: &Schema, tx: Transaction<'_>) -> DbResult<i32> {
         self.metadata_mgr.create_table(table_name, schema, tx)?;
         Ok(1)
+    }
+
+    fn execute_update_statement(&self, table_name: &str, fields: &[String], values: &[crate::query::Constant], predicate: Option<crate::query::Predicate>, tx: Transaction<'_>) -> DbResult<i32> {
+        let layout = self.metadata_mgr.get_layout(table_name, tx.clone())?;
+        let mut scan = TableScan::new(tx.clone(), table_name, layout)?;
+        
+        let mut affected_rows = 0;
+        
+        // TODO use index to find by predicate
+        if let Some(pred) = predicate {
+            scan.before_first()?;
+            while scan.next()? {
+                if pred.is_satisfied(&mut scan)? {
+                    for (field, value) in fields.iter().zip(values.iter()) {
+                        scan.set_val(field, value.clone())?;
+                    }
+                    affected_rows += 1;
+                }
+            }
+        } else {
+            // Update all records
+            scan.before_first()?;
+            while scan.next()? {
+                for (field, value) in fields.iter().zip(values.iter()) {
+                    scan.set_val(field, value.clone())?;
+                }
+                affected_rows += 1;
+            }
+        }
+        
+        scan.close();
+        Ok(affected_rows)
     }
 }
