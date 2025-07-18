@@ -1,12 +1,12 @@
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Constant {
-    Integer(i32),
+    Int(i32),
     String(String),
 }
 
 impl Constant {
-    pub fn integer(val: i32) -> Self {
-        Constant::Integer(val)
+    pub fn int(val: i32) -> Self {
+        Constant::Int(val)
     }
     
     pub fn string(val: impl Into<String>) -> Self {
@@ -14,7 +14,7 @@ impl Constant {
     }
     
     pub fn is_integer(&self) -> bool {
-        matches!(self, Constant::Integer(_))
+        matches!(self, Constant::Int(_))
     }
     
     pub fn is_string(&self) -> bool {
@@ -23,7 +23,7 @@ impl Constant {
     
     pub fn as_integer(&self) -> i32 {
         match self {
-            Constant::Integer(i) => *i,
+            Constant::Int(i) => *i,
             _ => panic!("Not an integer constant"),
         }
     }
@@ -37,8 +37,20 @@ impl Constant {
     
     pub fn to_string(&self) -> String {
         match self {
-            Constant::Integer(i) => i.to_string(),
+            Constant::Int(i) => i.to_string(),
             Constant::String(s) => s.clone(),
         }
     }
-} 
+}
+
+impl From<i32> for Constant {
+    fn from(value: i32) -> Self {
+        Constant::Int(value)
+    }
+}
+
+impl From<String> for Constant {
+    fn from(value: String) -> Self {
+        Constant::String(value)
+    }
+}

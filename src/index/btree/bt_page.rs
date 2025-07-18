@@ -201,7 +201,7 @@ impl<'a> BTPage<'a> {
         match field_type {
             FieldType::Integer => {
                 let val = self.get_int(slot, fldname)?;
-                Ok(Constant::integer(val))
+                Ok(Constant::int(val))
             }
             FieldType::Varchar => {
                 let val = self.get_string(slot, fldname)?;

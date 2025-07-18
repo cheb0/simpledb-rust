@@ -3,58 +3,58 @@ use crate::query::{Constant, Scan};
 use crate::record::Schema;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum Expression {
+pub enum Expr {
     Constant(Constant),
     FieldName(String),
 }
 
-impl Expression {
-    pub fn with_constant(val: Constant) -> Self {
-        Expression::Constant(val)
+impl Expr {
+    pub fn constant(val: Constant) -> Self {
+        Expr::Constant(val)
     }
 
-    pub fn with_field_name(fldname: impl Into<String>) -> Self {
-        Expression::FieldName(fldname.into())
+    pub fn field_name(fldname: impl Into<String>) -> Self {
+        Expr::FieldName(fldname.into())
     }
 
     pub fn evaluate(&self, s: &mut dyn Scan) -> DbResult<Constant> {
         match self {
-            Expression::Constant(val) => Ok(val.clone()),
-            Expression::FieldName(fldname) => s.get_val(fldname),
+            Expr::Constant(val) => Ok(val.clone()),
+            Expr::FieldName(fldname) => s.get_val(fldname),
         }
     }
 
     pub fn is_field_name(&self) -> bool {
-        matches!(self, Expression::FieldName(_))
+        matches!(self, Expr::FieldName(_))
     }
 
     pub fn as_constant(&self) -> Option<&Constant> {
         match self {
-            Expression::Constant(val) => Some(val),
-            Expression::FieldName(_) => None,
+            Expr::Constant(val) => Some(val),
+            Expr::FieldName(_) => None,
         }
     }
 
     pub fn as_field_name(&self) -> Option<&str> {
         match self {
-            Expression::Constant(_) => None,
-            Expression::FieldName(fldname) => Some(fldname),
+            Expr::Constant(_) => None,
+            Expr::FieldName(fldname) => Some(fldname),
         }
     }
 
     pub fn applies_to(&self, sch: &Schema) -> bool {
         match self {
-            Expression::Constant(_) => true,
-            Expression::FieldName(fldname) => sch.has_field(fldname),
+            Expr::Constant(_) => true,
+            Expr::FieldName(fldname) => sch.has_field(fldname),
         }
     }
 }
 
-impl std::fmt::Display for Expression {
+impl std::fmt::Display for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Expression::Constant(val) => write!(f, "{}", val.to_string()),
-            Expression::FieldName(fldname) => write!(f, "{}", fldname),
+            Expr::Constant(val) => write!(f, "{}", val.to_string()),
+            Expr::FieldName(fldname) => write!(f, "{}", fldname),
         }
     }
 }

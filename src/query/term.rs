@@ -2,17 +2,17 @@ use crate::error::DbResult;
 use crate::query::Scan;
 use crate::record::Schema;
 
-use super::Expression;
+use super::Expr;
 
 /// Represents a term that compares two expressions for equality.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Term {
-    lhs: Expression,
-    rhs: Expression,
+    lhs: Expr,
+    rhs: Expr,
 }
 
 impl Term {
-    pub fn new(lhs: Expression, rhs: Expression) -> Self {
+    pub fn new(lhs: Expr, rhs: Expr) -> Self {
         Term { lhs, rhs }
     }
 

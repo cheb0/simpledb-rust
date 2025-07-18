@@ -11,6 +11,6 @@ pub use constant::Constant;
 pub use scan::Scan;
 pub use update_scan::UpdateScan;
 pub use term::Term;
-pub use expression::Expression;
+pub use expression::Expr;
 pub use predicate::Predicate;
 pub use select_scan::SelectScan;

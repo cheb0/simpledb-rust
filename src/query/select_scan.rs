@@ -86,7 +86,7 @@ mod tests {
     use crate::{
         buffer::BufferMgr,
         log::LogMgr,
-        query::{Constant, Expression, Predicate, Scan, Term, UpdateScan},
+        query::{Constant, Expr, Predicate, Scan, Term, UpdateScan},
         record::{schema::Schema, table_scan::TableScan},
         storage::file_mgr::FileMgr,
         tx::transaction::Transaction,
@@ -123,8 +123,8 @@ mod tests {
 
         // Create predicate: id = 1
         let pred = Predicate::new(Term::new(
-            Expression::with_field_name("id"),
-            Expression::with_constant(Constant::Integer(1))
+            Expr::field_name("id"),
+            Expr::constant(Constant::Int(1))
         ));
 
         let mut select_scan = SelectScan::new(Box::new(table_scan), pred);

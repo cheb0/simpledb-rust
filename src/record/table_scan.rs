@@ -116,7 +116,7 @@ impl<'tx> Scan for TableScan<'tx> {
         match self.layout.schema().field_type(field_name) {
             Some(FieldType::Integer) => {
                 let val = self.get_int(field_name)?;
-                Ok(Constant::Integer(val))
+                Ok(Constant::Int(val))
             },
             Some(FieldType::Varchar) => {
                 let val = self.get_string(field_name)?;
@@ -138,7 +138,7 @@ impl<'tx> Scan for TableScan<'tx> {
 impl<'tx> UpdateScan for TableScan<'tx> {
     fn set_val(&mut self, field_name: &str, val: Constant) -> DbResult<()> {
         match val {
-            Constant::Integer(i) => self.set_int(field_name, i),
+            Constant::Int(i) => self.set_int(field_name, i),
             Constant::String(s) => self.set_string(field_name, &s),
         }
     }
@@ -233,27 +233,27 @@ mod tests {
         tx.append("testfile")?;
         tx.append("testfile")?;
 
-        let mut table_scan = TableScan::new(tx.clone(), "test_table", layout)?;
+        let mut scan = TableScan::new(tx.clone(), "test_table", layout)?;
 
-        table_scan.insert()?;
-        table_scan.set_int("id", 1)?;
-        table_scan.set_string("name", "Alice")?;
+        scan.insert()?;
+        scan.set_int("id", 1)?;
+        scan.set_string("name", "Alice")?;
         
-        table_scan.insert()?;
-        table_scan.set_int("id", 2)?;
-        table_scan.set_string("name", "Bob")?;
+        scan.insert()?;
+        scan.set_int("id", 2)?;
+        scan.set_string("name", "Bob")?;
         
-        table_scan.insert()?;
-        table_scan.set_int("id", 3)?;
-        table_scan.set_string("name", "Charlie")?;
+        scan.insert()?;
+        scan.set_int("id", 3)?;
+        scan.set_string("name", "Charlie")?;
 
-        table_scan.before_first()?;
+        scan.before_first()?;
 
         let mut count = 0;
-        while table_scan.next()? {
+        while scan.next()? {
             count += 1;
-            let id = table_scan.get_int("id")?;
-            let name = table_scan.get_string("name")?;
+            let id = scan.get_int("id")?;
+            let name = scan.get_string("name")?;
             
             match id {
                 1 => assert_eq!(name, "Alice"),
@@ -262,41 +262,40 @@ mod tests {
                 _ => panic!("Unexpected ID: {}", id),
             }
             
-            let id_val = table_scan.get_val("id")?;
+            let id_val = scan.get_val("id")?;
             assert!(id_val.is_integer());
             assert_eq!(id_val.as_integer(), id);
             
-            let name_val = table_scan.get_val("name")?;
-            assert!(name_val.is_string());
-            assert_eq!(name_val.as_string(), name);
+            let name_val = scan.get_val("name")?;
+            assert_eq!(name_val, Constant::String(name));
         }
 
         assert_eq!(count, 3, "Should have read 3 records");
 
-        table_scan.before_first()?;
-        table_scan.next()?;
-        table_scan.delete()?;
+        scan.before_first()?;
+        scan.next()?;
+        scan.delete()?;
 
-        table_scan.before_first()?;
+        scan.before_first()?;
         count = 0;
-        while table_scan.next()? {
+        while scan.next()? {
             count += 1;
         }
         assert_eq!(count, 2, "Should have 2 records after deletion");
         
-        table_scan.before_first()?;
-        table_scan.next()?;
-        let rid = table_scan.get_rid()?;
-        let id1 = table_scan.get_int("id")?;
+        scan.before_first()?;
+        scan.next()?;
+        let rid = scan.get_rid()?;
+        let id1 = scan.get_int("id")?;
         
-        table_scan.next()?;
-        table_scan.get_int("id")?;
+        scan.next()?;
+        scan.get_int("id")?;
         
-        table_scan.move_to_rid(rid)?;
-        let id_check = table_scan.get_int("id")?;
+        scan.move_to_rid(rid)?;
+        let id_check = scan.get_int("id")?;
         assert_eq!(id1, id_check, "RID navigation failed");
         
-        table_scan.close();
+        scan.close();
         tx.commit()?;
 
         Ok(())

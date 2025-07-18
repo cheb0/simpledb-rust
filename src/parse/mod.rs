@@ -1,10 +1,10 @@
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser as SqlParser;
-use sqlparser::ast::{CharacterLength, DataType, Expr, SetExpr, Statement as SqlStatement, Value};
+use sqlparser::ast::{CharacterLength, DataType, SetExpr, Statement as SqlStatement, Value};
 
 use crate::error::{DbError, DbResult};
 use crate::record::schema::Schema;
-use crate::query::{Constant, Expression, Term};
+use crate::query::{Constant, Expr, Term};
 use crate::query::predicate::Predicate;
 
 #[derive(Debug, Clone)]
@@ -121,13 +121,13 @@ impl Parser {
                         let row = &values.rows[0];
                         row.iter()
                             .map(|expr| match expr {
-                                Expr::Value(value) => {
+                                sqlparser::ast::Expr::Value(value) => {
                                     match &value.value {
                                         Value::SingleQuotedString(s) => {
                                             Ok(Constant::String(s.clone()))
                                         },
                                         Value::Number(n, _) => {
-                                            Ok(Constant::Integer(n.parse().map_err(|_| {
+                                            Ok(Constant::Int(n.parse().map_err(|_| {
                                                 DbError::Schema(format!("Invalid integer value: {}", n))
                                             })?))
                                         },
@@ -153,7 +153,7 @@ impl Parser {
         })
     }
 
-    fn parse_update(&self, table_name: &str, assignments: &[sqlparser::ast::Assignment], selection: &Option<Expr>) -> DbResult<Statement> {
+    fn parse_update(&self, table_name: &str, assignments: &[sqlparser::ast::Assignment], selection: &Option<sqlparser::ast::Expr>) -> DbResult<Statement> {
         let mut fields = Vec::new();
         let mut values = Vec::new();
         
@@ -162,9 +162,9 @@ impl Parser {
             fields.push(field_name);
             
             let value = match &assignment.value {
-                Expr::Value(value) => match &value.value {
+                sqlparser::ast::Expr::Value(value) => match &value.value {
                     Value::SingleQuotedString(s) => Ok(Constant::String(s.clone())),
-                    Value::Number(n, _) => Ok(Constant::Integer(n.parse().map_err(|_| {
+                    Value::Number(n, _) => Ok(Constant::Int(n.parse().map_err(|_| {
                         DbError::Schema(format!("Invalid integer value: {}", n))
                     })?)),
                     _ => Err(DbError::Schema("Unsupported value type in UPDATE".to_string())),
@@ -194,12 +194,12 @@ impl Parser {
             SetExpr::Select(select) => {
                 let fields = select.projection.iter()
                 .map(|item| match item {
-                    sqlparser::ast::SelectItem::UnnamedExpr(Expr::Identifier(ident)) => {
+                    sqlparser::ast::SelectItem::UnnamedExpr(sqlparser::ast::Expr::Identifier(ident)) => {
                         Ok(ident.value.clone())
                     }
                     sqlparser::ast::SelectItem::ExprWithAlias { expr, alias } => {
                         match expr {
-                            Expr::Identifier(ident) => Ok(alias.value.clone()),
+                            sqlparser::ast::Expr::Identifier(ident) => Ok(alias.value.clone()),
                             _ => Err(DbError::Schema("Only simple column references are supported".to_string())),
                         }
                     }
@@ -234,26 +234,26 @@ impl Parser {
         }
     }
 
-    fn parse_where_clause(&self, expr: &Expr) -> DbResult<Predicate> {
+    fn parse_where_clause(&self, expr: &sqlparser::ast::Expr) -> DbResult<Predicate> {
         match expr {
-            Expr::BinaryOp { left, op, right } => {
+            sqlparser::ast::Expr::BinaryOp { left, op, right } => {
                 match op {
                     sqlparser::ast::BinaryOperator::Eq => {
                         let field = match &**left {
-                            Expr::Identifier(ident) => ident.value.clone(),
+                            sqlparser::ast::Expr::Identifier(ident) => ident.value.clone(),
                             _ => return Err(DbError::Schema("Left side of = must be a field name".to_string())),
                         };
                         let value = match &**right {
-                            Expr::Value(value) => match &value.value {
+                            sqlparser::ast::Expr::Value(value) => match &value.value {
                                 Value::SingleQuotedString(s) => Constant::String(s.clone()),
-                                Value::Number(n, _) => Constant::Integer(n.parse().map_err(|_| {
+                                Value::Number(n, _) => Constant::Int(n.parse().map_err(|_| {
                                     DbError::Schema(format!("Invalid integer value: {}", n))
                                 })?),
                                 _ => return Err(DbError::Schema("Unsupported value type in WHERE clause".to_string())),
                             },
                             _ => return Err(DbError::Schema("Right side of = must be a value".to_string())),
                         };
-                        Ok(Predicate::default().with_term(Term::new(Expression::with_field_name(field), Expression::with_constant(value))))
+                        Ok(Predicate::default().with_term(Term::new(Expr::field_name(field), Expr::constant(value))))
                     }
                     sqlparser::ast::BinaryOperator::And => {
                         let left_pred = self.parse_where_clause(left)?;
@@ -316,7 +316,7 @@ mod tests {
                 assert_eq!(table_name, "test_table");
                 assert_eq!(fields, vec!["id", "name"]);
                 assert_eq!(values.len(), 2);
-                assert_eq!(values[0], Constant::Integer(1));
+                assert_eq!(values[0], Constant::Int(1));
                 assert_eq!(values[1], Constant::String("Alice".to_string()));
             }
             _ => panic!("Unexpected statement"),
@@ -346,8 +346,8 @@ mod tests {
                 assert_eq!(tables, vec!["test_table"]);
                 assert_eq!(tables, vec!["test_table"]);
                 assert_eq!(predicate, Some(
-                    Predicate::new(Term::new(Expression::FieldName("id".to_owned()), Expression::Constant(Constant::Integer(1))))
-                        .conjoin_with(Predicate::new(Term::new(Expression::FieldName("name".to_owned()), Expression::Constant(Constant::String("Alice".to_owned()))))))
+                    Predicate::new(Term::new(Expr::FieldName("id".to_owned()), Expr::Constant(Constant::Int(1))))
+                        .conjoin_with(Predicate::new(Term::new(Expr::FieldName("name".to_owned()), Expr::Constant(Constant::String("Alice".to_owned()))))))
                 );
             }
             _ => panic!("Unexpected statement"),
@@ -388,9 +388,9 @@ mod tests {
                 assert_eq!(fields, vec!["name", "age"]);
                 assert_eq!(values.len(), 2);
                 assert_eq!(values[0], Constant::String("Bob".to_string()));
-                assert_eq!(values[1], Constant::Integer(30));
+                assert_eq!(values[1], Constant::Int(30));
                 assert_eq!(predicate, Some(
-                    Predicate::new(Term::new(Expression::FieldName("id".to_owned()), Expression::Constant(Constant::Integer(1))))  
+                    Predicate::new(Term::new(Expr::FieldName("id".to_owned()), Expr::Constant(Constant::Int(1))))  
                 ));
             }
             _ => panic!("Unexpected statement"),
@@ -411,7 +411,7 @@ mod tests {
                 assert_eq!(table_name, "test_table");
                 assert_eq!(fields, vec!["age"]);
                 assert_eq!(values.len(), 1);
-                assert_eq!(values[0], Constant::Integer(25));
+                assert_eq!(values[0], Constant::Int(25));
                 assert!(predicate.is_none());
             }
             _ => panic!("Unexpected statement"),
@@ -434,7 +434,7 @@ mod tests {
                 assert_eq!(values.len(), 1);
                 assert_eq!(values[0], Constant::String("Alice".to_string()));
                 assert_eq!(predicate, Some(
-                    Predicate::new(Term::new(Expression::FieldName("id".to_owned()), Expression::Constant(Constant::Integer(5))))  
+                    Predicate::new(Term::new(Expr::FieldName("id".to_owned()), Expr::Constant(Constant::Int(5))))  
                 ));
             }
             _ => panic!("Unexpected statement"),
