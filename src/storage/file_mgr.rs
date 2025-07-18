@@ -71,7 +71,7 @@ impl FileMgr {
 
     /// Appends a new block to the end of the specified file and returns its BlockId.
     pub fn append(&self, filename: &str) -> io::Result<BlockId> {
-        let new_block_num = self.block_count(filename)?;
+        let new_block_num = self.block_cnt(filename)?;
         let blk = BlockId::new(filename.to_string(), new_block_num);
         
         let mut file = self.get_file(&blk.file_name())?;
@@ -86,7 +86,7 @@ impl FileMgr {
     }
 
     /// Returns the number of blocks in the specified file.
-    pub fn block_count(&self, filename: &str) -> io::Result<i32> {
+    pub fn block_cnt(&self, filename: &str) -> io::Result<i32> {
         let file = self.get_file(filename)?;
         let file_size = file.metadata()?.len();
         Ok((file_size / self.block_size as u64) as i32)
@@ -158,7 +158,7 @@ mod tests {
         assert_eq!(blk2.number(), 1);
         assert_eq!(blk3.number(), 2);
         
-        assert_eq!(file_mgr.block_count(filename).unwrap(), 3);
+        assert_eq!(file_mgr.block_cnt(filename).unwrap(), 3);
     }
 
     #[test]

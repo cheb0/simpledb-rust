@@ -24,7 +24,7 @@ unsafe impl Sync for BufferMgr {}
 
 struct BufferMgrInner {
     pins: Box<[usize]>,
-    num_available: usize,
+    available_cnt: usize,
     block_to_buffer_idx: HashMap<BlockId, usize>,
 }
 
@@ -35,9 +35,9 @@ pub struct PinnedBufferGuard<'a> {
 }
 
 impl BufferMgr {
-    pub fn new(file_mgr: Arc<FileMgr>, log_mgr: Arc<LogMgr>, buffer_count: usize) -> Self {
-        let mut buffers = Vec::with_capacity(buffer_count);
-        for _ in 0..buffer_count {
+    pub fn new(file_mgr: Arc<FileMgr>, log_mgr: Arc<LogMgr>, buffer_cnt: usize) -> Self {
+        let mut buffers = Vec::with_capacity(buffer_cnt);
+        for _ in 0..buffer_cnt {
             buffers.push(RefCell::new(
                 Buffer::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr))
             ));
@@ -45,8 +45,8 @@ impl BufferMgr {
         
         BufferMgr {
             inner: Mutex::new(BufferMgrInner {
-                pins: vec![0; buffer_count].into_boxed_slice(),
-                num_available: buffer_count,
+                pins: vec![0; buffer_cnt].into_boxed_slice(),
+                available_cnt: buffer_cnt,
                 block_to_buffer_idx: HashMap::new(),
             }),
             buffers: buffers.into_boxed_slice(),
@@ -56,7 +56,7 @@ impl BufferMgr {
 
     pub fn available(&self) -> usize {
         let inner = self.inner.lock().unwrap();
-        inner.num_available
+        inner.available_cnt
     }
 
     pub fn flush_all(&self, txnum: i32) -> DbResult<()> {
@@ -99,7 +99,7 @@ impl BufferMgr {
     fn try_to_pin(&self, inner: &mut BufferMgrInner, blk: &BlockId) -> DbResult<Option<usize>> {
         if let Some(&idx) = inner.block_to_buffer_idx.get(blk) {
             if inner.pins[idx] == 0 {
-                inner.num_available -= 1;
+                inner.available_cnt -= 1;
             }
             inner.pins[idx] += 1;
             
@@ -111,7 +111,7 @@ impl BufferMgr {
         if let Some(idx) = self.find_unpinned_buffer(inner) {
             inner.block_to_buffer_idx.insert(blk.clone(), idx);
             inner.pins[idx] = 1;
-            inner.num_available -= 1;
+            inner.available_cnt -= 1;
             
             let mut buffer = self.buffers[idx].borrow_mut();
             buffer.assign_to_block(blk.clone())?;
@@ -124,8 +124,8 @@ impl BufferMgr {
     
     fn find_unpinned_buffer(&self, inner: &BufferMgrInner) -> Option<usize> {
         // TODO O(N)
-        for (i, &pin_count) in inner.pins.iter().enumerate() {
-            if pin_count == 0 {
+        for (i, &pin_cnt) in inner.pins.iter().enumerate() {
+            if pin_cnt == 0 {
                 return Some(i);
             }
         }
@@ -142,7 +142,7 @@ impl BufferMgr {
             if let Some(block) = buffer.block() {
                 inner.block_to_buffer_idx.remove(&block);
             }
-            inner.num_available += 1;
+            inner.available_cnt += 1;
             self.condvar.notify_all();
         }
     }
@@ -179,8 +179,8 @@ mod tests {
         let file_mgr = Arc::new(FileMgr::new(temp_dir.path().to_path_buf(), 400)?);
         let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
         let buffer_mgr = BufferMgr::new(file_mgr.clone(), log_mgr.clone(), 3);
-        let num_blocks = 3;
-        for _ in 0..num_blocks {
+        let blocks_cnt = 3;
+        for _ in 0..blocks_cnt {
             file_mgr.append("testfile")?;
         }
 
@@ -204,7 +204,7 @@ mod tests {
         let pinned_guard = buffer_mgr.pin(&block)?;
         {
             let buffer = pinned_guard.borrow();
-            assert_eq!(buffer.contents().get_int(0), 123);
+            assert_eq!(buffer.page().get_int(0), 123);
         }
 
         Ok(())
@@ -221,8 +221,8 @@ mod tests {
             1)
         );
 
-        let num_blocks = 10;
-        for _ in 0..num_blocks {
+        let blocks_cnt = 10;
+        for _ in 0..blocks_cnt {
             file_mgr.append("testfile")?;
         }
         
@@ -239,7 +239,7 @@ mod tests {
             let guard = buffer_mgr_clone.pin(&blk2_clone).unwrap();
             {
                 let buffer = guard.borrow();
-                assert_eq!(buffer.contents().get_int(0), 0);
+                assert_eq!(buffer.page().get_int(0), 0);
             }
         });
         
@@ -262,17 +262,17 @@ mod tests {
             BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 3)
         );
 
-        let num_threads = 5;
+        let threads_cnt = 5;
         let ops_per_thread = 100;
-        let num_blocks = num_threads * ops_per_thread;
-        for _ in 0..num_blocks {
+        let blocks_cnt = threads_cnt * ops_per_thread;
+        for _ in 0..blocks_cnt {
             file_mgr.append("testfile")?;
         }
 
-        let barrier = Arc::new(Barrier::new(num_threads));
+        let barrier = Arc::new(Barrier::new(threads_cnt));
         
         let mut handles = Vec::new();
-        for thread_id in 0..num_threads {
+        for thread_id in 0..threads_cnt {
             let buffer_mgr_clone = Arc::clone(&buffer_mgr);
             let barrier_clone = Arc::clone(&barrier);
             
@@ -311,8 +311,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
         let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
-        let num_blocks = 3;
-        for _ in 0..num_blocks {
+        let blocks_cnt = 3;
+        for _ in 0..blocks_cnt {
             file_mgr.append("testfile")?;
         }
         let buffer_mgr = BufferMgr::new(

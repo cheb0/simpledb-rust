@@ -10,12 +10,12 @@ use super::log_record::{LogRecord, COMMIT_FLAG};
 /// A commit transaction log record.
 #[derive(Serialize, Deserialize)]
 pub struct CommitRecord {
-    tx_num: i32,
+    tx_id: i32,
 }
 
 impl CommitRecord {
-    pub fn new(tx_num: i32) -> Self {
-        CommitRecord { tx_num }
+    pub fn new(tx_id: i32) -> Self {
+        CommitRecord { tx_id }
     }
     
     pub fn to_bytes(&self) -> DbResult<Vec<u8>> {
@@ -30,11 +30,11 @@ impl LogRecord for CommitRecord {
         COMMIT_FLAG
     }
 
-    fn tx_number(&self) -> i32 {
-        self.tx_num
+    fn tx_id(&self) -> i32 {
+        self.tx_id
     }
 
-    fn undo(&self, _tx_num: i32, _tx: Transaction) -> DbResult<()> {
+    fn undo(&self, _tx_id: i32, _tx: Transaction) -> DbResult<()> {
         Ok(())
     }
 
@@ -56,11 +56,11 @@ mod tests {
         let deserialized = create_log_record(&bytes)?;
         
         assert_eq!(deserialized.op(), COMMIT_FLAG);
-        assert_eq!(deserialized.tx_number(), 123);
+        assert_eq!(deserialized.tx_id(), 123);
         
         let commit = (&*deserialized).as_any().downcast_ref::<CommitRecord>()
             .expect("Failed to downcast to CommitRecord");
-        assert_eq!(commit.tx_num, 123);
+        assert_eq!(commit.tx_id, 123);
         Ok(())
     }
 }

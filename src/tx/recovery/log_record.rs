@@ -23,10 +23,10 @@ pub trait LogRecord: Send + Sync {
 
     fn op(&self) -> i32;
 
-    fn tx_number(&self) -> i32;
+    fn tx_id(&self) -> i32;
 
     /// Undoes the operation encoded by this log record.
-    fn undo(&self, tx_num: i32, tx: Transaction) -> DbResult<()>;
+    fn undo(&self, tx_id: i32, tx: Transaction) -> DbResult<()>;
 
     fn as_any(&self) -> &dyn Any;
 }

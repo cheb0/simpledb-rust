@@ -16,9 +16,9 @@ impl Term {
         Term { lhs, rhs }
     }
 
-    pub fn is_satisfied(&self, s: &mut dyn Scan) -> DbResult<bool> {
-        let lhs_val = self.lhs.evaluate(s)?;
-        let rhs_val = self.rhs.evaluate(s)?;
+    pub fn is_satisfied(&self, scan: &mut dyn Scan) -> DbResult<bool> {
+        let lhs_val = self.lhs.evaluate(scan)?;
+        let rhs_val = self.rhs.evaluate(scan)?;
         Ok(lhs_val == rhs_val)
     }
 

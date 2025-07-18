@@ -9,16 +9,16 @@ use super::log_record::{LogRecord, SETSTRING_FLAG};
 
 #[derive(Serialize, Deserialize)]
 pub struct SetStringRecord {
-    tx_num: i32,
+    tx_id: i32,
     offset: usize,
     val: String,
     blk: BlockId,
 }
 
 impl SetStringRecord {
-    pub fn new(tx_num: i32, blk: BlockId, offset: usize, val: String) -> Self {
+    pub fn new(tx_id: i32, blk: BlockId, offset: usize, val: String) -> Self {
         SetStringRecord {
-            tx_num,
+            tx_id,
             offset,
             val,
             blk,
@@ -37,11 +37,11 @@ impl LogRecord for SetStringRecord {
         SETSTRING_FLAG
     }
 
-    fn tx_number(&self) -> i32 {
-        self.tx_num
+    fn tx_id(&self) -> i32 {
+        self.tx_id
     }
 
-    fn undo(&self, _tx_num: i32, tx: Transaction) -> DbResult<()> {
+    fn undo(&self, _tx_id: i32, tx: Transaction) -> DbResult<()> {
         tx.pin(&self.blk)?;
         tx.set_string(&self.blk, self.offset, &self.val, false)?;
         tx.unpin(&self.blk);
@@ -69,12 +69,12 @@ mod tests {
         let deserialized = create_log_record(&bytes)?;
         
         assert_eq!(deserialized.op(), SETSTRING_FLAG);
-        assert_eq!(deserialized.tx_number(), 202);
+        assert_eq!(deserialized.tx_id(), 202);
         
         let set_string = (&*deserialized).as_any().downcast_ref::<SetStringRecord>()
             .expect("Failed to downcast to SetStringRecord");
         
-        assert_eq!(set_string.tx_num, 202);
+        assert_eq!(set_string.tx_id, 202);
         assert_eq!(set_string.offset, 32);
         assert_eq!(set_string.val, test_string);
         assert_eq!(set_string.blk.file_name(), "datafile");

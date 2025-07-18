@@ -138,27 +138,27 @@ impl<'a> BTPage<'a> {
     /// Delete the index record at the specified slot.
     /// @param slot the slot of the deleted index record
     pub fn delete(&self, slot: usize) -> DbResult<()> {
-        let num_recs = self.records_count()?;
-        for i in (slot + 1)..num_recs {
+        let records_cnt = self.records_cnt()?;
+        for i in (slot + 1)..records_cnt {
             self.copy_record(i, i - 1)?;
         }
-        self.set_records_count(num_recs - 1)?;
+        self.set_records_cnt(records_cnt - 1)?;
         Ok(())
     }
 
     /// Return the number of index records in this page.
     /// @return the number of index records in this page
-    pub fn records_count(&self) -> DbResult<usize> {
-        let num = self.tx.get_int(&self.current_blk, std::mem::size_of::<i32>())?;
-        Ok(num as usize)
+    pub fn records_cnt(&self) -> DbResult<usize> {
+        let cnt = self.tx.get_int(&self.current_blk, std::mem::size_of::<i32>())?;
+        Ok(cnt as usize)
     }
 
     fn transfer_records(& self, slot: usize, dest: &BTPage<'_>) -> DbResult<()> {
         let mut dest_slot = 0;
         let schema = self.layout.schema();
-        let records_count = self.records_count()?;
+        let records_cnt = self.records_cnt()?;
         // TODO
-        while slot < records_count {
+        while slot < records_cnt {
             dest.insert(dest_slot);
             for field_name in schema.fields() {
                 dest.set_val(dest_slot, field_name, &self.get_val(slot, &field_name)?)?
@@ -219,16 +219,16 @@ impl<'a> BTPage<'a> {
         }
     }
 
-    fn set_records_count(&self, n: usize) -> DbResult<()> {
+    fn set_records_cnt(&self, n: usize) -> DbResult<()> {
         self.tx.set_int(&self.current_blk, std::mem::size_of::<i32>(), n as i32, true)
     }
 
     fn insert(&self, slot: usize) -> DbResult<()> {
-        let records_count = self.records_count()?;
-        for i in (slot..records_count).rev() {
+        let records_cnt = self.records_cnt()?;
+        for i in (slot..records_cnt).rev() {
             self.copy_record(i, i + 1)?;
         }
-        self.set_records_count(records_count + 1)?;
+        self.set_records_cnt(records_cnt + 1)?;
         Ok(())
     }
 
@@ -277,7 +277,6 @@ mod tests {
         
         let tx = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
         
-        // Create schema for index
         let mut schema = Schema::new();
         schema.add_string_field("dataval", 20);
         schema.add_int_field("block");
@@ -285,7 +284,6 @@ mod tests {
         
         let layout = Layout::new(schema);
         
-        // Create a new block
         let blk = tx.append("testindex")?;
         let bt_page = BTPage::new(tx.clone(), blk.clone(), layout)?;
         
@@ -298,7 +296,7 @@ mod tests {
         let rid = RID::new(5, 10);
         
         bt_page.insert_leaf(0, &val, &rid)?;
-        assert_eq!(bt_page.records_count()?, 1);
+        assert_eq!(bt_page.records_cnt()?, 1);
         
         let retrieved_rid = bt_page.get_data_rid(0)?;
         assert_eq!(retrieved_rid.block_number(), 5);

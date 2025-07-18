@@ -27,11 +27,11 @@ impl LogRecord for CheckpointRecord {
         CHECKPOINT_FLAG
     }
 
-    fn tx_number(&self) -> i32 {
+    fn tx_id(&self) -> i32 {
         -1
     }
 
-    fn undo(&self, _tx_num: i32, _tx: Transaction) -> DbResult<()> {
+    fn undo(&self, _tx_id: i32, _tx: Transaction) -> DbResult<()> {
         Ok(())
     }
 
@@ -53,7 +53,7 @@ mod tests {
         let deserialized = create_log_record(&bytes)?;
         
         assert_eq!(deserialized.op(), CHECKPOINT_FLAG);
-        assert_eq!(deserialized.tx_number(), -1);
+        assert_eq!(deserialized.tx_id(), -1);
         
         (&*deserialized).as_any().downcast_ref::<CheckpointRecord>()
             .expect("Failed to downcast to CheckpointRecord");

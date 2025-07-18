@@ -75,8 +75,8 @@ mod tests {
         let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
         let buffer_mgr = BufferMgr::new(file_mgr.clone(), log_mgr.clone(), 3);
         let mut buffer_list = BufferList::new(&buffer_mgr);
-        let num_blocks = 3;
-        for _ in 0..num_blocks {
+        let blocks_cnt = 3;
+        for _ in 0..blocks_cnt {
             file_mgr.append("testfile")?;
         }
 

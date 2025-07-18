@@ -6,13 +6,13 @@ use crate::error::DbResult;
 
 use super::recovery::{commit_record::CommitRecord, log_record::{create_log_record, START_FLAG}, rollback_record::RollbackRecord, set_int_record::SetIntRecord, set_string_record::SetStringRecord, start_record::StartRecord};
 
-static NEXT_TX_NUM: AtomicI32 = AtomicI32::new(0);
+static NEXT_TX_ID: AtomicI32 = AtomicI32::new(0);
 
 pub struct TransactionInner<'a> {
+    id: i32,
     buffer_mgr: &'a BufferMgr,
     log_mgr: Arc<LogMgr>,
     file_mgr: Arc<FileMgr>,
-    tx_num: i32,
     buffers: BufferList<'a>,
 }
 
@@ -26,10 +26,10 @@ impl<'a> Transaction<'a> {
         log_mgr: Arc<LogMgr>,
         buffer_mgr: &'a BufferMgr,
     ) -> DbResult<Self> {
-        let tx_num = NEXT_TX_NUM.fetch_add(1, Ordering::SeqCst) + 1;
+        let tx_id = NEXT_TX_ID.fetch_add(1, Ordering::SeqCst) + 1;
         
         // Create start record and log it
-        let start_record = StartRecord::create(tx_num);
+        let start_record = StartRecord::create(tx_id);
         let bytes = start_record.to_bytes()?;
         log_mgr.append(&bytes)?;
         
@@ -39,7 +39,7 @@ impl<'a> Transaction<'a> {
             buffer_mgr,
             log_mgr,
             file_mgr,
-            tx_num,
+            id: tx_id,
             buffers,
         };
         
@@ -50,9 +50,9 @@ impl<'a> Transaction<'a> {
 
     pub fn commit(&self) -> DbResult<()> {
         let mut inner = self.inner.borrow_mut();
-        inner.buffer_mgr.flush_all(inner.tx_num)?;
+        inner.buffer_mgr.flush_all(inner.id)?;
         
-        let commit_record = CommitRecord::new(inner.tx_num);
+        let commit_record = CommitRecord::new(inner.id);
         let bytes = commit_record.to_bytes()?;
         let lsn = inner.log_mgr.append(&bytes)?;
         inner.log_mgr.flush(lsn)?;
@@ -65,9 +65,9 @@ impl<'a> Transaction<'a> {
         self.do_rollback()?;
         
         let mut inner = self.inner.borrow_mut();
-        inner.buffer_mgr.flush_all(inner.tx_num)?;
+        inner.buffer_mgr.flush_all(inner.id)?;
         
-        let rollback_record = RollbackRecord::create(inner.tx_num);
+        let rollback_record = RollbackRecord::create(inner.id);
         let bytes = rollback_record.to_bytes()?;
         let lsn = inner.log_mgr.append(&bytes)?;
         inner.log_mgr.flush(lsn)?;
@@ -79,7 +79,7 @@ impl<'a> Transaction<'a> {
     fn do_rollback(&self) -> DbResult<()> {
         let inner = self.inner.borrow();
         let log_mgr = Arc::clone(&inner.log_mgr); // TODO
-        let tx_num = inner.tx_num;
+        let tx_id = inner.id;
         drop(inner);
         
         let mut iter = log_mgr.iterator()?;
@@ -87,11 +87,11 @@ impl<'a> Transaction<'a> {
         while let bytes = iter.next()? {
             let record = create_log_record(&bytes)?;
             
-            if record.tx_number() == tx_num {
+            if record.tx_id() == tx_id {
                 if record.op() == START_FLAG {
                     return Ok(());
                 }
-                record.undo(tx_num, self.clone())?;
+                record.undo(tx_id, self.clone())?;
             }
         }
         
@@ -111,7 +111,7 @@ impl<'a> Transaction<'a> {
         let guard = inner.buffers.get_buffer(blk)
             .ok_or_else(|| DbError::BufferNotFound(blk.clone()))?;
         let buffer = guard.borrow();
-        Ok(buffer.contents().get_int(offset))
+        Ok(buffer.page().get_int(offset))
     }
 
     pub fn get_string(&self, blk: &BlockId, offset: usize) -> DbResult<String> {
@@ -119,7 +119,7 @@ impl<'a> Transaction<'a> {
         let guard = inner.buffers.get_buffer(blk)
             .ok_or_else(|| DbError::BufferNotFound(blk.clone()))?;
         let buffer = guard.borrow();
-        Ok(buffer.contents().get_string(offset))
+        Ok(buffer.page().get_string(offset))
     }
 
     pub fn set_int(&self, blk: &BlockId, offset: usize, val: i32, log: bool/*TODO should be true by default*/) -> DbResult<()> {
@@ -129,14 +129,14 @@ impl<'a> Transaction<'a> {
         let mut buffer = guard.borrow_mut();
         
         if log {
-            let old_val = buffer.contents().get_int(offset);
+            let old_val = buffer.page().get_int(offset);
             let blk_clone = buffer.block().expect("Buffer has no block assigned").clone();
             
-            let set_int_record = SetIntRecord::new(inner.tx_num, blk_clone, offset, old_val);
+            let set_int_record = SetIntRecord::new(inner.id, blk_clone, offset, old_val);
             let bytes = set_int_record.to_bytes()?;
             let lsn = inner.log_mgr.append(&bytes)?;
             
-            buffer.set_modified(inner.tx_num, lsn);
+            buffer.set_modified(inner.id, lsn);
         }
         
         buffer.contents_mut().set_int(offset, val);
@@ -150,14 +150,14 @@ impl<'a> Transaction<'a> {
         let mut buffer = guard.borrow_mut();
         
         if log {
-            let old_val = buffer.contents().get_string(offset);
+            let old_val = buffer.page().get_string(offset);
             let blk_clone = buffer.block().expect("Buffer has no block assigned").clone();
             
-            let set_string_record = SetStringRecord::new(inner.tx_num, blk_clone, offset, old_val);
+            let set_string_record = SetStringRecord::new(inner.id, blk_clone, offset, old_val);
             let bytes = set_string_record.to_bytes()?;
             let lsn = inner.log_mgr.append(&bytes)?;
             
-            buffer.set_modified(inner.tx_num, lsn);
+            buffer.set_modified(inner.id, lsn);
         }
         
         buffer.contents_mut().set_string(offset, val);
@@ -166,7 +166,7 @@ impl<'a> Transaction<'a> {
 
     pub fn size(&self, file_name: &str) -> DbResult<i32> {
         let inner = self.inner.borrow();
-        Ok(inner.file_mgr.block_count(file_name)?)
+        Ok(inner.file_mgr.block_cnt(file_name)?)
     }
 
     pub fn append(&self, file_name: &str) -> DbResult<BlockId> {
@@ -182,8 +182,8 @@ impl<'a> Transaction<'a> {
         self.inner.borrow().buffer_mgr.available()
     }
     
-    pub fn tx_num(&self) -> i32 {
-        self.inner.borrow().tx_num
+    pub fn id(&self) -> i32 {
+        self.inner.borrow().id
     }
 }
 

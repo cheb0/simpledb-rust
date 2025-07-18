@@ -6,7 +6,7 @@ use crate::storage::file_mgr::FileMgr;
 use crate::storage::page::Page;
 
 /// Manages the database log, which is used for recovery.
-// It employs interrior mutability and also is thread-safe
+/// It employs interrior mutability and also is thread-safe
 pub struct LogMgr {
     file_mgr: Arc<FileMgr>,
     log_file: String,
@@ -26,11 +26,11 @@ impl LogMgr {
         let mut log_page = Page::new(block_size);
         log_page.set_int(0, file_mgr.block_size() as i32);
         
-        let block_count = file_mgr.block_count(log_file)?;
-        let current_blk = if block_count == 0 {
+        let block_cnt = file_mgr.block_cnt(log_file)?;
+        let current_blk = if block_cnt == 0 {
             Self::append_new_block(&file_mgr, log_file)?
         } else {
-            let blk = BlockId::new(log_file.to_string(), block_count - 1);
+            let blk = BlockId::new(log_file.to_string(), block_cnt - 1);
             file_mgr.read(&blk, &mut log_page)?;
             blk
         };
@@ -277,7 +277,7 @@ mod tests {
     #[test]
     fn test_log_manager_persistence() -> DbResult<()> {
         let temp_dir = tempdir()?;
-        let fm = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
+        let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
         let records = vec![
             b"First log record".to_vec(),
             b"Second log record".to_vec(),
@@ -286,7 +286,7 @@ mod tests {
         
         // First session: create log manager and append records
         {
-            let log_mgr = LogMgr::new(Arc::clone(&fm), "testlog")?;
+            let log_mgr = LogMgr::new(Arc::clone(&file_mgr), "testlog")?;
             
             for rec in &records {
                 log_mgr.append(rec)?;
@@ -296,7 +296,7 @@ mod tests {
         
         // Second session: create a new log manager and read the records
         {
-            let log_mgr = LogMgr::new(Arc::clone(&fm), "testlog")?;
+            let log_mgr = LogMgr::new(Arc::clone(&file_mgr), "testlog")?;
             
             // Retrieve records using an iterator
             let mut iter: LogIterator<'_> = log_mgr.iterator()?;
@@ -318,16 +318,16 @@ mod tests {
         use std::sync::{Arc, Barrier};
 
         let temp_dir = tempdir()?;
-        let fm = Arc::new(FileMgr::new(temp_dir.path(), 4096)?);
-        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&fm), "testlog")?);
+        let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 4096)?);
+        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
 
-        let thread_count = 10;
+        let thread_cnt = 10;
         let records_per_thread = 50000;
-        let barrier = Arc::new(Barrier::new(thread_count));
+        let barrier = Arc::new(Barrier::new(thread_cnt));
 
         let mut handles = Vec::new();
 
-        for thread_id in 0..thread_count {
+        for thread_id in 0..thread_cnt {
             let log_mgr_clone = Arc::clone(&log_mgr);
             let barrier_clone = Arc::clone(&barrier);
 
@@ -370,7 +370,7 @@ mod tests {
 
         retrieved_records.reverse();
 
-        assert_eq!(retrieved_records.len(), thread_count * records_per_thread);
+        assert_eq!(retrieved_records.len(), thread_cnt * records_per_thread);
         for (i, (record, _)) in all_records.iter().enumerate() {
             assert_eq!(&retrieved_records[i], record);
         }

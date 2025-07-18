@@ -4,51 +4,53 @@ use crate::error::DbError;
 
 use super::Constant;
 
+/// The scan class corresponding to the project relational algebra operator.
+/// All methods except hasField delegate their work to the underlying scan.
 pub struct ProjectScan<'a> {
-    s: Box<dyn Scan + 'a>,
+    scan: Box<dyn Scan + 'a>,
     fields: Vec<String>,
 }
 
 impl<'a> ProjectScan<'a> {
-    pub fn new(s: Box<dyn Scan + 'a>, fieldlist: Vec<String>) -> Self {
-        ProjectScan { s, fields: fieldlist }
+    pub fn new(s: Box<dyn Scan + 'a>, field_names: Vec<String>) -> Self {
+        ProjectScan { scan: s, fields: field_names }
     }
 
-    fn has_field(&self, fldname: &str) -> bool {
-        self.fields.iter().any(|f| f == fldname)
+    fn has_field(&self, field_name: &str) -> bool {
+        self.fields.iter().any(|f| f == field_name)
     }
 }
 
 impl<'a> Scan for ProjectScan<'a> {
     fn before_first(&mut self) -> DbResult<()> {
-        self.s.before_first()
+        self.scan.before_first()
     }
 
     fn next(&mut self) -> DbResult<bool> {
-        self.s.next()
+        self.scan.next()
     }
 
-    fn get_int(&mut self, fldname: &str) -> DbResult<i32> {
-        if self.has_field(fldname) {
-            self.s.get_int(fldname)
+    fn get_int(&mut self, field_name: &str) -> DbResult<i32> {
+        if self.has_field(field_name) {
+            self.scan.get_int(field_name)
         } else {
-            Err(DbError::FieldNotFound(fldname.to_string()))
+            Err(DbError::FieldNotFound(field_name.to_string()))
         }
     }
 
-    fn get_string(&mut self, fldname: &str) -> DbResult<String> {
-        if self.has_field(fldname) {
-            self.s.get_string(fldname)
+    fn get_string(&mut self, field_name: &str) -> DbResult<String> {
+        if self.has_field(field_name) {
+            self.scan.get_string(field_name)
         } else {
-            Err(DbError::FieldNotFound(fldname.to_string()))
+            Err(DbError::FieldNotFound(field_name.to_string()))
         }
     }
 
-    fn get_val(&mut self, fldname: &str) -> DbResult<Constant> {
-        if self.has_field(fldname) {
-            self.s.get_val(fldname)
+    fn get_val(&mut self, field_name: &str) -> DbResult<Constant> {
+        if self.has_field(field_name) {
+            self.scan.get_val(field_name)
         } else {
-            Err(DbError::FieldNotFound(fldname.to_string()))
+            Err(DbError::FieldNotFound(field_name.to_string()))
         }
     }
     
@@ -57,6 +59,6 @@ impl<'a> Scan for ProjectScan<'a> {
     }
 
     fn close(&mut self) {
-        self.s.close();
+        self.scan.close();
     }
 }

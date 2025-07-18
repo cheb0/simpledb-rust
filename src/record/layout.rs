@@ -2,6 +2,9 @@ use std::collections::HashMap;
 use super::schema::{Schema, FieldType};
 use crate::storage::Page;
 
+/// Description of the structure of a record.
+/// It contains the name, type, length and offset of
+/// each field of the table.
 #[derive(Debug, Clone)]
 pub struct Layout {
     schema: Schema,

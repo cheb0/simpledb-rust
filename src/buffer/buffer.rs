@@ -10,9 +10,9 @@ use crate::storage::Page;
 pub struct Buffer {
     file_mgr: Arc<FileMgr>,
     log_mgr: Arc<LogMgr>,
-    contents: Page,
+    page: Page,
     block_id: Option<BlockId>,
-    tx_num: i32,
+    tx_id: i32,
     lsn: i32,
 }
 
@@ -22,19 +22,19 @@ impl Buffer {
         Buffer {
             file_mgr,
             log_mgr,
-            contents: Page::new(block_size),
+            page: Page::new(block_size),
             block_id: None,
-            tx_num: -1,
+            tx_id: -1,
             lsn: -1,
         }
     }
 
-    pub fn contents(&self) -> &Page {
-        &self.contents
+    pub fn page(&self) -> &Page {
+        &self.page
     }
 
     pub fn contents_mut(&mut self) -> &mut Page {
-        &mut self.contents
+        &mut self.page
     }
 
     pub fn block(&self) -> Option<&BlockId> {
@@ -42,14 +42,14 @@ impl Buffer {
     }
 
     pub fn set_modified(&mut self, txnum: i32, lsn: i32) {
-        self.tx_num = txnum;
+        self.tx_id = txnum;
         if lsn >= 0 {
             self.lsn = lsn;
         }
     }
 
     pub fn modifying_tx(&self) -> i32 {
-        self.tx_num
+        self.tx_id
     }
 
     /// Assigns this buffer to the specified block.
@@ -58,17 +58,17 @@ impl Buffer {
     pub fn assign_to_block(&mut self, blk: BlockId) -> io::Result<()> {
         self.flush()?;
         self.block_id = Some(blk.clone());
-        self.file_mgr.read(&blk, &mut self.contents)?;
+        self.file_mgr.read(&blk, &mut self.page)?;
         Ok(())
     }
 
     pub fn flush(&mut self) -> io::Result<()> {
-        if self.tx_num >= 0 {
+        if self.tx_id >= 0 {
             self.log_mgr.flush(self.lsn)?;
             if let Some(blk) = &self.block_id {
-                self.file_mgr.write(blk, &self.contents)?;
+                self.file_mgr.write(blk, &self.page)?;
             }
-            self.tx_num = -1;
+            self.tx_id = -1;
         }
         Ok(())
     }

@@ -9,16 +9,16 @@ use super::log_record::{LogRecord, SETINT_FLAG};
 
 #[derive(Serialize, Deserialize)]
 pub struct SetIntRecord {
-    pub tx_num: i32,
+    pub tx_id: i32,
     pub offset: usize,
     pub val: i32,
     pub blk: BlockId,
 }
 
 impl SetIntRecord {
-    pub fn new(tx_num: i32, blk: BlockId, offset: usize, val: i32) -> Self {
+    pub fn new(tx_id: i32, blk: BlockId, offset: usize, val: i32) -> Self {
         SetIntRecord {
-            tx_num,
+            tx_id,
             offset,
             val,
             blk,
@@ -37,11 +37,11 @@ impl LogRecord for SetIntRecord {
         SETINT_FLAG
     }
 
-    fn tx_number(&self) -> i32 {
-        self.tx_num
+    fn tx_id(&self) -> i32 {
+        self.tx_id
     }
 
-    fn undo(&self, _tx_num: i32, tx: Transaction) -> DbResult<()> {
+    fn undo(&self, _tx_id: i32, tx: Transaction) -> DbResult<()> {
         tx.pin(&self.blk)?;
         tx.set_int(&self.blk, self.offset, self.val, false)?;
         tx.unpin(&self.blk);
@@ -68,11 +68,11 @@ mod tests {
         let deserialized = create_log_record(&bytes)?;
         
         assert_eq!(deserialized.op(), SETINT_FLAG);
-        assert_eq!(deserialized.tx_number(), 101);
+        assert_eq!(deserialized.tx_id(), 101);
         
         let set_int = (&*deserialized).as_any().downcast_ref::<SetIntRecord>()
             .expect("Failed to downcast to SetIntRecord");
-        assert_eq!(set_int.tx_num, 101);
+        assert_eq!(set_int.tx_id, 101);
         assert_eq!(set_int.offset, 16);
         assert_eq!(set_int.val, 9999);
         assert_eq!(set_int.blk.file_name(), "testfile");
