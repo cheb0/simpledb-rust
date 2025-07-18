@@ -5,7 +5,7 @@ use crate::record::Schema;
 use super::Expression;
 
 /// Represents a term that compares two expressions for equality.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Term {
     lhs: Expression,
     rhs: Expression,

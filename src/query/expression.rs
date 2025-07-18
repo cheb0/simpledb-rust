@@ -2,7 +2,7 @@ use crate::error::DbResult;
 use crate::query::{Constant, Scan};
 use crate::record::Schema;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Expression {
     Constant(Constant),
     FieldName(String),

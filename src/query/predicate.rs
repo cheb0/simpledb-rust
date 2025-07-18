@@ -5,7 +5,7 @@ use super::Term;
 
 /// Represents a predicate that combines multiple terms with AND (conjunction).
 /// A predicate is satisfied only if all its terms are satisfied.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
 pub struct Predicate {
     terms: Vec<Term>,
 }

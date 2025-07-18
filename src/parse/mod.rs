@@ -344,8 +344,11 @@ mod tests {
             Statement::Query { fields, tables, predicate } => {
                 assert_eq!(fields, vec!["id", "name"]);
                 assert_eq!(tables, vec!["test_table"]);
-                // Note: Testing predicate contents would require more complex assertions
-                // as Predicate doesn't implement Eq
+                assert_eq!(tables, vec!["test_table"]);
+                assert_eq!(predicate, Some(
+                    Predicate::new(Term::new(Expression::FieldName("id".to_owned()), Expression::Constant(Constant::Integer(1))))
+                        .conjoin_with(Predicate::new(Term::new(Expression::FieldName("name".to_owned()), Expression::Constant(Constant::String("Alice".to_owned()))))))
+                );
             }
             _ => panic!("Unexpected statement"),
         }
@@ -364,6 +367,7 @@ mod tests {
             Statement::Query { fields, tables, predicate } => {
                 assert_eq!(fields, vec!["id"]);
                 assert_eq!(tables, vec!["test_table"]);
+                assert!(predicate.is_none());
             }
             _ => panic!("Unexpected statement"),
         }
@@ -385,6 +389,9 @@ mod tests {
                 assert_eq!(values.len(), 2);
                 assert_eq!(values[0], Constant::String("Bob".to_string()));
                 assert_eq!(values[1], Constant::Integer(30));
+                assert_eq!(predicate, Some(
+                    Predicate::new(Term::new(Expression::FieldName("id".to_owned()), Expression::Constant(Constant::Integer(1))))  
+                ));
             }
             _ => panic!("Unexpected statement"),
         }
@@ -426,6 +433,9 @@ mod tests {
                 assert_eq!(fields, vec!["name"]);
                 assert_eq!(values.len(), 1);
                 assert_eq!(values[0], Constant::String("Alice".to_string()));
+                assert_eq!(predicate, Some(
+                    Predicate::new(Term::new(Expression::FieldName("id".to_owned()), Expression::Constant(Constant::Integer(5))))  
+                ));
             }
             _ => panic!("Unexpected statement"),
         }
