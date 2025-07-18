@@ -6,6 +6,10 @@ use crate::tx::Transaction;
 use crate::record::{Layout, RID};
 use crate::query::Constant;
 
+const DATAVAL_FIELD: &str = "dataval";
+const BLOCK_FIELD: &str = "block";
+const ID_FIELD: &str = "id";
+
 /// B-tree directory and leaf pages have many commonalities:
 /// in particular, their records are stored in sorted order, 
 /// and pages split when full.
@@ -18,6 +22,17 @@ pub struct BTPage<'a> {
 
 impl<'a> BTPage<'a> {
     pub fn new(tx: Transaction<'a>, current_blk: BlockId, layout: Layout) -> DbResult<Self> {
+        let schema= layout.schema();
+        if !schema.has_field(DATAVAL_FIELD) {
+            return Err(DbError::Schema(format!("{} must be present in the schema", DATAVAL_FIELD)));
+        }
+        if !schema.has_field(BLOCK_FIELD) {
+            return Err(DbError::Schema(format!("{} must be present in the schema", BLOCK_FIELD)));
+        }
+        if !schema.has_field(ID_FIELD) {
+            return Err(DbError::Schema(format!("{} must be present in the schema", ID_FIELD)));
+        }
+
         tx.pin(&current_blk)?;
         Ok(BTPage {
             tx,
@@ -30,7 +45,7 @@ impl<'a> BTPage<'a> {
     /// @param slot the integer slot of an index record
     /// @return the dataval of the record at that slot
     pub fn get_data_val(&self, slot: usize) -> DbResult<Constant> {
-        self.get_val(slot, "dataval")
+        self.get_val(slot, DATAVAL_FIELD)
     }
     
     /// Return the value of the page's flag field
@@ -64,11 +79,11 @@ impl<'a> BTPage<'a> {
         self.tx.set_int(blk, 0, flag, false)?;
         self.tx.set_int(blk, std::mem::size_of::<i32>(), 0, false)?;  // #records = 0
         
-        let rec_size = self.layout.slot_size();
+        let slot_size = self.layout.slot_size();
         let block_size = self.tx.block_size();
         
-        for pos in (2 * std::mem::size_of::<i32>()..block_size).step_by(rec_size) {
-            if pos + rec_size <= block_size {
+        for pos in (2 * std::mem::size_of::<i32>()..block_size).step_by(slot_size) {
+            if pos + slot_size <= block_size {
                 self.make_default_record(blk, pos)?;
             }
         }
@@ -93,23 +108,23 @@ impl<'a> BTPage<'a> {
         Ok(())
     }
 
-    // Methods called only by BTreeDir   
-    /// Return the block number stored in the index record 
+    // Methods called only by BTreeDir
+    /// Return the block number stored in the index record
     /// at the specified slot.
     /// @param slot the slot of an index record
     /// @return the block number stored in that record
-    pub fn get_child_num(&self, slot: usize) -> DbResult<i32> {
-        self.get_int(slot, "block")
+    pub fn get_child_cnt(&self, slot: usize) -> DbResult<i32> {
+        self.get_int(slot, BLOCK_FIELD)
     }
 
     /// Insert a directory entry at the specified slot.
     /// @param slot the slot of an index record
     /// @param val the dataval to be stored
     /// @param blknum the block number to be stored
-    pub fn insert_dir(&self, slot: usize, val: &Constant, blknum: i32) -> DbResult<()> {
+    pub fn insert_dir(&self, slot: usize, val: &Constant, blk_num: i32) -> DbResult<()> {
         self.insert(slot)?;
-        self.set_val(slot, "dataval", val)?;
-        self.set_int(slot, "block", blknum)?;
+        self.set_val(slot, DATAVAL_FIELD, val)?;
+        self.set_int(slot, BLOCK_FIELD, blk_num)?;
         Ok(())
     }
 
@@ -118,8 +133,8 @@ impl<'a> BTPage<'a> {
     /// @param slot the slot of the desired index record
     /// @return the dataRID value store at that slot
     pub fn get_data_rid(&self, slot: usize) -> DbResult<RID> {
-        let block_num = self.get_int(slot, "block")?;
-        let id = self.get_int(slot, "id")?;
+        let block_num = self.get_int(slot, BLOCK_FIELD)?;
+        let id = self.get_int(slot, ID_FIELD)?;
         Ok(RID::new(block_num, id as usize))
     }
 
@@ -129,9 +144,9 @@ impl<'a> BTPage<'a> {
     /// @param rid the new dataRID
     pub fn insert_leaf(&self, slot: usize, val: &Constant, rid: &RID) -> DbResult<()> {
         self.insert(slot)?;
-        self.set_val(slot, "dataval", val)?;
-        self.set_int(slot, "block", rid.block_number())?;
-        self.set_int(slot, "id", rid.slot() as i32)?;
+        self.set_val(slot, DATAVAL_FIELD, val)?;
+        self.set_int(slot, BLOCK_FIELD, rid.block_number())?;
+        self.set_int(slot, ID_FIELD, rid.slot() as i32)?;
         Ok(())
     }
 
@@ -269,40 +284,93 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
+    fn test_btree_page_record_iter() -> DbResult<()> {
+        let temp_dir = TempDir::new().unwrap();
+        let file_mgr = Arc::new(FileMgr::new(temp_dir.path().to_path_buf(), 400)?);
+        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
+        let buffer_mgr = BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 8);
+        
+        let tx: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
+
+        let mut schema = Schema::new();
+        schema.add_string_field(DATAVAL_FIELD, 5);
+        schema.add_int_field(BLOCK_FIELD);
+        schema.add_int_field(ID_FIELD);
+
+        let layout = Layout::new(schema);
+
+        let blk = tx.append("testindex")?;
+        let page = BTPage::new(tx.clone(), blk.clone(), layout)?;
+
+        assert_eq!(0, page.records_cnt()?);
+
+        page.insert(0)?;
+        page.set_int(0, ID_FIELD, 1)?;
+        page.set_int(0, BLOCK_FIELD, 42)?;
+        page.set_string(0, DATAVAL_FIELD, "ABCDE")?;
+
+        page.insert(1)?;
+        page.set_int(1, ID_FIELD, 2)?;
+        page.set_int(1, BLOCK_FIELD, 99)?;
+        page.set_string(1, DATAVAL_FIELD, "ZXCVB")?;
+
+        page.insert(2)?;
+        page.set_int(2, ID_FIELD, 3)?;
+        page.set_int(2, BLOCK_FIELD, 115)?;
+        page.set_string(2, DATAVAL_FIELD, "QWERT")?;
+
+        assert_eq!(3, page.records_cnt()?);
+
+        assert_eq!(1, page.get_int(0, ID_FIELD)?);
+        assert_eq!(42, page.get_int(0, BLOCK_FIELD)?);
+        assert_eq!("ABCDE", page.get_string(0, DATAVAL_FIELD)?);
+
+        assert_eq!(2, page.get_int(1, ID_FIELD)?);
+        assert_eq!(99, page.get_int(1, BLOCK_FIELD)?);
+        assert_eq!("ZXCVB", page.get_string(1, DATAVAL_FIELD)?);
+
+        assert_eq!(3, page.get_int(2, ID_FIELD)?);
+        assert_eq!(115, page.get_int(2, BLOCK_FIELD)?);
+        assert_eq!("QWERT", page.get_string(2, DATAVAL_FIELD)?);
+
+        Ok(())
+    }
+
+    #[test]
     fn test_bt_page_basic() -> DbResult<()> {
         let temp_dir = TempDir::new().unwrap();
         let file_mgr = Arc::new(FileMgr::new(temp_dir.path().to_path_buf(), 400)?);
         let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
         let buffer_mgr = BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 8);
         
-        let tx = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
+        let tx: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
         
         let mut schema = Schema::new();
-        schema.add_string_field("dataval", 20);
-        schema.add_int_field("block");
-        schema.add_int_field("id");
+        schema.add_string_field(DATAVAL_FIELD, 20);
+        schema.add_int_field(BLOCK_FIELD);
+        schema.add_int_field(ID_FIELD);
         
         let layout = Layout::new(schema);
         
         let blk = tx.append("testindex")?;
-        let bt_page = BTPage::new(tx.clone(), blk.clone(), layout)?;
+        let page = BTPage::new(tx.clone(), blk.clone(), layout)?;
         
         // Test flag operations
-        bt_page.set_flag(1)?;
-        assert_eq!(bt_page.get_flag()?, 1);
+        page.set_flag(1)?;
+        assert_eq!(page.get_flag()?, 1);
         
         // Test record operations
         let val = Constant::string("test_value");
         let rid = RID::new(5, 10);
         
-        bt_page.insert_leaf(0, &val, &rid)?;
-        assert_eq!(bt_page.records_cnt()?, 1);
+        page.insert_leaf(0, &val, &rid)?;
+        assert_eq!(page.records_cnt()?, 1);
         
-        let retrieved_rid = bt_page.get_data_rid(0)?;
+        let retrieved_rid = page.get_data_rid(0)?;
         assert_eq!(retrieved_rid.block_number(), 5);
         assert_eq!(retrieved_rid.slot(), 10);
         
-        let retrieved_val = bt_page.get_data_val(0)?;
+        let retrieved_val = page.get_data_val(0)?;
         assert_eq!(retrieved_val, val);
         
         Ok(())
