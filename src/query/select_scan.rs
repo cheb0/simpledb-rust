@@ -1,6 +1,5 @@
 use crate::error::DbResult;
 use crate::query::{Scan, Predicate, Constant};
-use crate::record::{RID};
 
 /// A scan that filters records based on a predicate.
 pub struct SelectScan<'a> {
@@ -81,31 +80,23 @@ impl<'a> Scan for SelectScan<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-    use tempfile::TempDir;
     use crate::{
-        buffer::BufferMgr,
-        log::LogMgr,
         query::{Constant, Expr, Predicate, Scan, Term, UpdateScan},
         record::{schema::Schema, table_scan::TableScan},
-        storage::file_mgr::FileMgr,
-        tx::transaction::Transaction,
+        tx::transaction::Transaction, utils::testing_utils::temp_db,
     };
 
     use super::*;
 
     #[test]
     fn test_select_scan() -> DbResult<()> {
-        let temp_dir = TempDir::new().unwrap();
-        let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
-        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
-        let buffer_mgr = Arc::new(BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 3));
-
+        let db = temp_db()?;
+        
         let mut schema = Schema::new();
         schema.add_int_field("id");
         schema.add_string_field("name", 20);
         let layout = crate::record::layout::Layout::new(schema);
-        let tx = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
+        let tx = db.new_tx()?;
 
         let mut table_scan = TableScan::new(tx.clone(), "test_table", layout)?;
         

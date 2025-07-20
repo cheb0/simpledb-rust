@@ -83,6 +83,10 @@ impl<'a> SimpleDB<'a> {
         Arc::clone(&self.file_mgr)
     }
 
+    pub fn buffer_mgr(&'a self) -> &'a BufferMgr {
+        self.buffer_mgr
+    }
+
     pub fn log_mgr(&self) -> Arc<LogMgr> {
         Arc::clone(&self.log_mgr)
     }

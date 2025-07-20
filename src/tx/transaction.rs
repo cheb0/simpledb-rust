@@ -27,8 +27,7 @@ impl<'a> Transaction<'a> {
         buffer_mgr: &'a BufferMgr,
     ) -> DbResult<Self> {
         let tx_id = NEXT_TX_ID.fetch_add(1, Ordering::SeqCst) + 1;
-        
-        // Create start record and log it
+
         let start_record = StartRecord::create(tx_id);
         let bytes = start_record.to_bytes()?;
         log_mgr.append(&bytes)?;
@@ -56,6 +55,7 @@ impl<'a> Transaction<'a> {
         let bytes = commit_record.to_bytes()?;
         let lsn = inner.log_mgr.append(&bytes)?;
         inner.log_mgr.flush(lsn)?;
+        // TODO fsync
         
         inner.buffers.unpin_all();
         Ok(())

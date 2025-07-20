@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use crate::error::{DbError, DbResult};
 use crate::record::schema::FieldType;
 use crate::storage::BlockId;
@@ -283,10 +282,7 @@ impl<'a> Drop for BTPage<'a> {
 mod tests {
     use super::*;
     use crate::record::Schema;
-    use crate::storage::FileMgr;
-    use crate::log::LogMgr;
-    use crate::buffer::BufferMgr;
-    use tempfile::TempDir;
+    use crate::utils::testing_utils::temp_db;
 
     struct TestRecord {
         id: i32,
@@ -317,12 +313,8 @@ mod tests {
 
     #[test]
     fn test_btree_page_record_iter() -> DbResult<()> {
-        let temp_dir = TempDir::new().unwrap();
-        let file_mgr = Arc::new(FileMgr::new(temp_dir.path().to_path_buf(), 400)?);
-        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
-        let buffer_mgr = BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 8);
-        
-        let tx: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
+        let db = temp_db()?;
+        let tx = db.new_tx()?;
 
         let mut schema = Schema::new();
         schema.add_string_field(DATAVAL_FIELD, 5);
@@ -356,12 +348,8 @@ mod tests {
 
     #[test]
     fn test_page_split() -> DbResult<()> {
-        let temp_dir = TempDir::new().unwrap();
-        let file_mgr = Arc::new(FileMgr::new(temp_dir.path().to_path_buf(), 400)?);
-        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
-        let buffer_mgr = BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 8);
-        
-        let tx: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
+        let db = temp_db()?;
+        let tx = db.new_tx()?;
 
         let mut schema = Schema::new();
         schema.add_string_field(DATAVAL_FIELD, 5);
@@ -403,12 +391,8 @@ mod tests {
 
     #[test]
     fn test_bt_page_basic() -> DbResult<()> {
-        let temp_dir = TempDir::new().unwrap();
-        let file_mgr = Arc::new(FileMgr::new(temp_dir.path().to_path_buf(), 400)?);
-        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
-        let buffer_mgr = BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 8);
-        
-        let tx: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
+        let db = temp_db()?;
+        let tx = db.new_tx()?;
 
         let mut schema = Schema::new();
         schema.add_string_field(DATAVAL_FIELD, 10);

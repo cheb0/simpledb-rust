@@ -106,19 +106,12 @@ impl TableMgr {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
-    use crate::{buffer::BufferMgr, error::DbResult, log::LogMgr, metadata::TableMgr, record::Schema, storage::FileMgr, tx::Transaction};
-    use tempfile::TempDir;
+    use crate::{error::DbResult, metadata::TableMgr, record::Schema, utils::testing_utils::temp_db};
 
     #[test]
     fn test_table_mgr() -> DbResult<()> {
-        let temp_dir = TempDir::new().unwrap();
-        let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
-        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
-        let buffer_mgr = Arc::new(BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 3));
-
-        let tx: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
+        let db = temp_db()?;
+        let tx = db.new_tx()?;
         
         let table_mgr = TableMgr::new(true, tx.clone())?;
         
@@ -139,7 +132,7 @@ mod tests {
         
         tx.commit()?;
         
-        let tx2: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
+        let tx2 = db.new_tx()?;
         let layout2 = table_mgr.get_layout("test_table", tx2.clone())?;
         
         assert_eq!(layout.slot_size(), layout2.slot_size());

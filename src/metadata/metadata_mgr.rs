@@ -24,18 +24,12 @@ impl MetadataMgr {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{buffer::BufferMgr, log::LogMgr, record::Schema, storage::FileMgr};
-    use std::sync::Arc;
-    use tempfile::TempDir;
+    use crate::{record::Schema, utils::testing_utils::temp_db};
 
     #[test]
     fn test_metadata_mgr() -> DbResult<()> {
-        let temp_dir = TempDir::new().unwrap();
-        let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
-        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
-        let buffer_mgr = Arc::new(BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 3));
-
-        let tx = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
+        let db = temp_db()?;
+        let tx = db.new_tx()?;
         
         let md_mgr = MetadataMgr::new(true, tx.clone())?;
         
@@ -52,7 +46,7 @@ mod tests {
         
         tx.commit()?;
         
-        let tx2 = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
+        let tx2 = db.new_tx()?;
         let layout2 = md_mgr.get_layout("test_table", tx2.clone())?;
         
         assert_eq!(layout.slot_size(), layout2.slot_size());

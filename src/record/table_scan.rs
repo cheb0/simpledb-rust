@@ -212,22 +212,19 @@ impl<'tx> UpdateScan for TableScan<'tx> {
 mod tests {
     use std::sync::Arc;
     use tempfile::TempDir;
-    use crate::{buffer::BufferMgr, log::LogMgr, query::{Scan, UpdateScan}, record::schema::Schema, storage::file_mgr::FileMgr};
+    use crate::{query::{Scan, UpdateScan}, record::schema::Schema, utils::testing_utils::temp_db};
 
     use super::*;
 
     #[test]
     fn test() -> DbResult<()> {
-        let temp_dir = TempDir::new().unwrap();
-        let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
-        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
-        let buffer_mgr = Arc::new(BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 3));
-
+        let db = temp_db()?;
+        
         let mut schema = Schema::new();
         schema.add_int_field("id");
         schema.add_string_field("name", 20);
         let layout = Layout::new(schema);
-        let tx = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
+        let tx = db.new_tx()?;
 
         tx.append("testfile")?;
         tx.append("testfile")?;
