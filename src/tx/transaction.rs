@@ -84,7 +84,8 @@ impl<'a> Transaction<'a> {
         
         let mut iter = log_mgr.iterator()?;
         
-        while let bytes = iter.next()? {
+        while iter.has_next() {
+            let bytes = iter.next()?;
             let record = create_log_record(&bytes)?;
             
             if record.tx_id() == tx_id {
@@ -94,8 +95,9 @@ impl<'a> Transaction<'a> {
                 record.undo(tx_id, self.clone())?;
             }
         }
-        
-        Ok(())
+
+        // we havent' seen a start record, the log is in inconsistent state
+        Err(DbError::LogInconsistent)
     }
 
     pub fn pin(&self, blk: &BlockId) -> DbResult<()> {

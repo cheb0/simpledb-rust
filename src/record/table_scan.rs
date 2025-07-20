@@ -210,8 +210,6 @@ impl<'tx> UpdateScan for TableScan<'tx> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-    use tempfile::TempDir;
     use crate::{query::{Scan, UpdateScan}, record::schema::Schema, utils::testing_utils::temp_db};
 
     use super::*;

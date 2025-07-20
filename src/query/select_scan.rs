@@ -83,7 +83,7 @@ mod tests {
     use crate::{
         query::{Constant, Expr, Predicate, Scan, Term, UpdateScan},
         record::{schema::Schema, table_scan::TableScan},
-        tx::transaction::Transaction, utils::testing_utils::temp_db,
+        utils::testing_utils::temp_db,
     };
 
     use super::*;

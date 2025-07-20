@@ -10,6 +10,9 @@ pub enum DbError {
 
     #[error("Buffer abort exception: {0}")]
     BufferAbort(String),
+
+    #[error("Log inconsistent")]
+    LogInconsistent,
     
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),

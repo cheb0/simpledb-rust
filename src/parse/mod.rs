@@ -199,7 +199,7 @@ impl Parser {
                     }
                     sqlparser::ast::SelectItem::ExprWithAlias { expr, alias } => {
                         match expr {
-                            sqlparser::ast::Expr::Identifier(ident) => Ok(alias.value.clone()),
+                            sqlparser::ast::Expr::Identifier(_ident) => Ok(alias.value.clone()),
                             _ => Err(DbError::Schema("Only simple column references are supported".to_string())),
                         }
                     }
