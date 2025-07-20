@@ -60,10 +60,13 @@ impl<'a> BTPage<'a> {
         self.tx.set_int(&self.current_blk, 0, val, true)
     }
 
-    // pub fn split(&self, split_pos: usize, flag: i32) {
-    //     let new_block = self.append_new(flag);
-    //     let new_page = BTPage::new(self.tx.clone(), new_block, self.layout.clone());
-    // }
+    pub fn split(&self, split_pos: usize, flag: i32) -> DbResult<BlockId> {
+        let new_block = self.append_new(flag)?;
+        let new_page = BTPage::new(self.tx.clone(), new_block.clone(), self.layout.clone())?;
+        self.transfer_records(split_pos, &new_page)?;
+        new_page.set_flag(flag)?;
+        return Ok(new_block);
+    }
     
     /// Append a new block to the end of the specified B-tree file,
     /// having the specified flag value.
@@ -71,7 +74,9 @@ impl<'a> BTPage<'a> {
     /// @return a reference to the newly-created block
     pub fn append_new(&self, flag: i32) -> DbResult<BlockId> {
         let blk = self.tx.append(&self.current_blk.file_name())?;
+        self.tx.pin(&blk)?;
         self.format(&blk, flag)?;
+        self.tx.unpin(&blk);
         Ok(blk)
     }
 
@@ -168,17 +173,17 @@ impl<'a> BTPage<'a> {
         Ok(cnt as usize)
     }
 
-    fn transfer_records(& self, slot: usize, dest: &BTPage<'_>) -> DbResult<()> {
+    // TODO this is very inefficient, should just memcpy recs
+    fn transfer_records(&self, slot: usize, dest: &BTPage<'_>) -> DbResult<()> {
         let mut dest_slot = 0;
         let schema = self.layout.schema();
-        let records_cnt = self.records_cnt()?;
         // TODO
-        while slot < records_cnt {
-            dest.insert(dest_slot);
+        while slot < self.records_cnt()? {
+            dest.insert(dest_slot)?;
             for field_name in schema.fields() {
                 dest.set_val(dest_slot, field_name, &self.get_val(slot, &field_name)?)?
             }
-            self.delete(slot);
+            self.delete(slot)?;
             dest_slot += 1;
         }
         Ok(())
@@ -283,6 +288,33 @@ mod tests {
     use crate::buffer::BufferMgr;
     use tempfile::TempDir;
 
+    struct TestRecord {
+        id: i32,
+        block: i32,
+        dataval: &'static str,
+    }
+
+    impl TestRecord {
+        fn new(id: i32, block: i32, dataval: &'static str) -> Self {
+            TestRecord { id, block, dataval }
+        }
+
+        fn insert_into(&self, page: &BTPage<'_>, slot: usize) -> DbResult<()> {
+            page.insert(slot)?;
+            page.set_int(slot, ID_FIELD, self.id)?;
+            page.set_int(slot, BLOCK_FIELD, self.block)?;
+            page.set_string(slot, DATAVAL_FIELD, self.dataval)?;
+            Ok(())
+        }
+
+        fn assert_in_page(&self, page: &BTPage<'_>, slot: usize) -> DbResult<()> {
+            assert_eq!(self.id, page.get_int(slot, ID_FIELD)?);
+            assert_eq!(self.block, page.get_int(slot, BLOCK_FIELD)?);
+            assert_eq!(self.dataval, page.get_string(slot, DATAVAL_FIELD)?);
+            Ok(())
+        }
+    }
+
     #[test]
     fn test_btree_page_record_iter() -> DbResult<()> {
         let temp_dir = TempDir::new().unwrap();
@@ -298,41 +330,74 @@ mod tests {
         schema.add_int_field(ID_FIELD);
 
         let layout = Layout::new(schema);
-
         let blk = tx.append("testindex")?;
         let page = BTPage::new(tx.clone(), blk.clone(), layout)?;
 
         assert_eq!(0, page.records_cnt()?);
 
-        page.insert(0)?;
-        page.set_int(0, ID_FIELD, 1)?;
-        page.set_int(0, BLOCK_FIELD, 42)?;
-        page.set_string(0, DATAVAL_FIELD, "ABCDE")?;
+        let records = vec![
+            TestRecord::new(1, 42, "ABCDE"),
+            TestRecord::new(2, 99, "ZXCVB"),
+            TestRecord::new(3, 115, "QWERT"),
+        ];
 
-        page.insert(1)?;
-        page.set_int(1, ID_FIELD, 2)?;
-        page.set_int(1, BLOCK_FIELD, 99)?;
-        page.set_string(1, DATAVAL_FIELD, "ZXCVB")?;
-
-        page.insert(2)?;
-        page.set_int(2, ID_FIELD, 3)?;
-        page.set_int(2, BLOCK_FIELD, 115)?;
-        page.set_string(2, DATAVAL_FIELD, "QWERT")?;
+        for (slot, record) in records.iter().enumerate() {
+            record.insert_into(&page, slot)?;
+        }
 
         assert_eq!(3, page.records_cnt()?);
 
-        assert_eq!(1, page.get_int(0, ID_FIELD)?);
-        assert_eq!(42, page.get_int(0, BLOCK_FIELD)?);
-        assert_eq!("ABCDE", page.get_string(0, DATAVAL_FIELD)?);
+        for (slot, record) in records.iter().enumerate() {
+            record.assert_in_page(&page, slot)?;
+        }
 
-        assert_eq!(2, page.get_int(1, ID_FIELD)?);
-        assert_eq!(99, page.get_int(1, BLOCK_FIELD)?);
-        assert_eq!("ZXCVB", page.get_string(1, DATAVAL_FIELD)?);
+        Ok(())
+    }
 
-        assert_eq!(3, page.get_int(2, ID_FIELD)?);
-        assert_eq!(115, page.get_int(2, BLOCK_FIELD)?);
-        assert_eq!("QWERT", page.get_string(2, DATAVAL_FIELD)?);
+    #[test]
+    fn test_page_split() -> DbResult<()> {
+        let temp_dir = TempDir::new().unwrap();
+        let file_mgr = Arc::new(FileMgr::new(temp_dir.path().to_path_buf(), 400)?);
+        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
+        let buffer_mgr = BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 8);
+        
+        let tx: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
 
+        let mut schema = Schema::new();
+        schema.add_string_field(DATAVAL_FIELD, 5);
+        schema.add_int_field(BLOCK_FIELD);
+        schema.add_int_field(ID_FIELD);
+
+        let layout = Layout::new(schema);
+        let blk = tx.append("testindex")?;
+        let page = BTPage::new(tx.clone(), blk.clone(), layout.clone())?;
+        
+        // Insert records into the original page
+        let records = vec![
+            TestRecord::new(1, 42, "ABCDE"),
+            TestRecord::new(2, 99, "ZXCVB"),
+            TestRecord::new(3, 115, "QWERT"),
+            TestRecord::new(4, 200, "ZGSVA"),
+        ];
+
+        for (slot, record) in records.iter().enumerate() {
+            record.insert_into(&page, slot)?;
+        }
+
+        assert_eq!(4, page.records_cnt()?);
+
+        let new_block = page.split(2, 777)?;
+        let new_page = BTPage::new(tx.clone(), new_block.clone(), layout.clone())?;
+
+        assert_eq!(2, page.records_cnt()?);
+        records[0].assert_in_page(&page, 0)?;
+        records[1].assert_in_page(&page, 1)?;
+
+        assert_eq!(2, new_page.records_cnt()?);
+        records[2].assert_in_page(&new_page, 0)?;
+        records[3].assert_in_page(&new_page, 1)?;
+
+        assert_eq!(777, new_page.get_flag()?);
         Ok(())
     }
 
@@ -344,14 +409,13 @@ mod tests {
         let buffer_mgr = BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 8);
         
         let tx: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
-        
+
         let mut schema = Schema::new();
-        schema.add_string_field(DATAVAL_FIELD, 20);
+        schema.add_string_field(DATAVAL_FIELD, 10);
         schema.add_int_field(BLOCK_FIELD);
         schema.add_int_field(ID_FIELD);
-        
+
         let layout = Layout::new(schema);
-        
         let blk = tx.append("testindex")?;
         let page = BTPage::new(tx.clone(), blk.clone(), layout)?;
         
@@ -360,7 +424,7 @@ mod tests {
         assert_eq!(page.get_flag()?, 1);
         
         // Test record operations
-        let val = Constant::string("test_value");
+        let val: Constant = Constant::string("test_value");
         let rid = RID::new(5, 10);
         
         page.insert_leaf(0, &val, &rid)?;

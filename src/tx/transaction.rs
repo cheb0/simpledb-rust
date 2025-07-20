@@ -109,7 +109,7 @@ impl<'a> Transaction<'a> {
     pub fn get_int(&self, blk: &BlockId, offset: usize) -> DbResult<i32> {
         let inner = self.inner.borrow();
         let guard = inner.buffers.get_buffer(blk)
-            .ok_or_else(|| DbError::BufferNotFound(blk.clone()))?;
+            .ok_or_else(|| DbError::BufferNotPinned(blk.clone()))?;
         let buffer = guard.borrow();
         Ok(buffer.page().get_int(offset))
     }
@@ -117,7 +117,7 @@ impl<'a> Transaction<'a> {
     pub fn get_string(&self, blk: &BlockId, offset: usize) -> DbResult<String> {
         let inner = self.inner.borrow();
         let guard = inner.buffers.get_buffer(blk)
-            .ok_or_else(|| DbError::BufferNotFound(blk.clone()))?;
+            .ok_or_else(|| DbError::BufferNotPinned(blk.clone()))?;
         let buffer = guard.borrow();
         Ok(buffer.page().get_string(offset))
     }
@@ -125,7 +125,7 @@ impl<'a> Transaction<'a> {
     pub fn set_int(&self, blk: &BlockId, offset: usize, val: i32, log: bool/*TODO should be true by default*/) -> DbResult<()> {
         let inner = self.inner.borrow();
         let guard = inner.buffers.get_buffer(blk)
-            .ok_or_else(|| DbError::BufferNotFound(blk.clone()))?;
+            .ok_or_else(|| DbError::BufferNotPinned(blk.clone()))?;
         let mut buffer = guard.borrow_mut();
         
         if log {
@@ -146,7 +146,7 @@ impl<'a> Transaction<'a> {
     pub fn set_string(&self, blk: &BlockId, offset: usize, val: &str, log: bool) -> DbResult<()> {
         let inner = self.inner.borrow();
         let guard = inner.buffers.get_buffer(blk)
-            .ok_or_else(|| DbError::BufferNotFound(blk.clone()))?;
+            .ok_or_else(|| DbError::BufferNotPinned(blk.clone()))?;
         let mut buffer = guard.borrow_mut();
         
         if log {
