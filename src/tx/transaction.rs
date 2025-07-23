@@ -8,6 +8,7 @@ use super::recovery::{commit_record::CommitRecord, log_record::{create_log_recor
 
 static NEXT_TX_ID: AtomicI32 = AtomicI32::new(0);
 
+// Transaction is alive as long as DB is alive, so we can reference BufferMgr and other types.
 pub struct TransactionInner<'a> {
     id: i32,
     buffer_mgr: &'a BufferMgr,

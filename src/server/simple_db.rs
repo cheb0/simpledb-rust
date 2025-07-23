@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::sync::Arc;
+use std::marker::PhantomData;
 
 use crate::buffer::BufferMgr;
 use crate::error::DbResult;
@@ -15,9 +16,10 @@ use super::Config;
 pub struct SimpleDB<'a> {
     file_mgr: Arc<FileMgr>,
     log_mgr: Arc<LogMgr>,
-    buffer_mgr: &'a BufferMgr,
+    buffer_mgr: Arc<BufferMgr>,
     planner: Planner,
     metadata_mgr: Arc<MetadataMgr>,
+    _phantom: PhantomData<&'a ()>,
 }
 
 impl<'a> SimpleDB<'a> {
@@ -25,12 +27,11 @@ impl<'a> SimpleDB<'a> {
         let file_mgr = Arc::new(FileMgr::new(&config.db_directory, config.block_size)?);
         let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), config.log_file_path().to_str().unwrap())?);
         
-        // TODO fix this
-        let buffer_mgr = Box::leak(Box::new(BufferMgr::new(
+        let buffer_mgr = Arc::new(BufferMgr::new(
             Arc::clone(&file_mgr),
             Arc::clone(&log_mgr),
             config.buffer_capacity,
-        )));
+        ));
 
 
         // TODO recover if is_new
@@ -47,9 +48,10 @@ impl<'a> SimpleDB<'a> {
         Ok(Self {
             file_mgr,
             log_mgr,
-            buffer_mgr: buffer_mgr,
+            buffer_mgr: Arc::clone(&buffer_mgr),
             metadata_mgr: md_mgr,
             planner: planner,
+            _phantom: PhantomData,
         })
     }
 
@@ -84,7 +86,7 @@ impl<'a> SimpleDB<'a> {
     }
 
     pub fn buffer_mgr(&'a self) -> &'a BufferMgr {
-        self.buffer_mgr
+        &self.buffer_mgr
     }
 
     pub fn log_mgr(&self) -> Arc<LogMgr> {
