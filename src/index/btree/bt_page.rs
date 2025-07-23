@@ -112,7 +112,24 @@ impl<'a> BTPage<'a> {
         Ok(())
     }
 
-    // Methods called only by BTreeDir
+    /// Find the slot before the first record that is greater than or equal to the search key.
+    /// Returns the slot index of the last record that is less than the search key.
+    /// Returns -1 if all records are greater than or equal to the search key.
+    pub fn find_slot_before(&self, search_key: &Constant) -> DbResult<i32> {
+        let mut slot = 0;
+        let num_recs = self.records_cnt()?;
+        
+        while slot < num_recs {
+            let data_val = self.get_data_val(slot)?;
+            if data_val.compare_to(search_key) >= std::cmp::Ordering::Equal {
+                break;
+            }
+            slot += 1;
+        }
+        
+        Ok(slot as i32 - 1)
+    }
+
     /// Return the block number stored in the index record
     /// at the specified slot.
     /// @param slot the slot of an index record
@@ -421,6 +438,72 @@ mod tests {
         let retrieved_val = page.get_data_val(0)?;
         assert_eq!(retrieved_val, val);
         
+        Ok(())
+    }
+
+    #[test]
+    fn test_find_slot_before_string() -> DbResult<()> {
+        let db = temp_db()?;
+        let tx = db.new_tx()?;
+
+        let mut schema = Schema::new();
+        schema.add_string_field(DATAVAL_FIELD, 5);
+        schema.add_int_field(BLOCK_FIELD);
+        schema.add_int_field(ID_FIELD);
+
+        let layout = Layout::new(schema);
+        let blk = tx.append("testindex")?;
+        let page = BTPage::new(tx.clone(), blk.clone(), layout)?;
+
+        let records = vec![
+            TestRecord::new(1, 42, "AAAAA"),
+            TestRecord::new(2, 99, "BBBBB"),
+            TestRecord::new(3, 115, "CCCCC"),
+            TestRecord::new(4, 200, "DDDDD"),
+        ];
+
+        for (slot, record) in records.iter().enumerate() {
+            record.insert_into(&page, slot)?;
+        }
+
+        assert_eq!(page.find_slot_before(&Constant::string("AAAAA"))?, -1); // Before first
+        assert_eq!(page.find_slot_before(&Constant::string("BBBBB"))?, 0);  // After first
+        assert_eq!(page.find_slot_before(&Constant::string("CCCCC"))?, 1);  // After second
+        assert_eq!(page.find_slot_before(&Constant::string("DDDDD"))?, 2);  // After third
+        assert_eq!(page.find_slot_before(&Constant::string("EEEEE"))?, 3);  // After last
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_find_slot_before_int() -> DbResult<()> {
+        let db = temp_db()?;
+        let tx = db.new_tx()?;
+
+        let mut schema = Schema::new();
+        schema.add_int_field(DATAVAL_FIELD);
+        schema.add_int_field(BLOCK_FIELD);
+        schema.add_int_field(ID_FIELD);
+
+        let layout = Layout::new(schema);
+        let blk = tx.append("testindex_int")?;
+        let page = BTPage::new(tx.clone(), blk.clone(), layout)?;
+
+        for i in 0..5i32 {
+            let slot = i as usize;
+            page.insert(slot)?;
+            page.set_int(slot, DATAVAL_FIELD, i * 10)?;
+            page.set_int(slot, BLOCK_FIELD, i)?;
+            page.set_int(slot, ID_FIELD, i)?;
+        }
+
+        assert_eq!(page.find_slot_before(&Constant::int(0))?, -1);
+        assert_eq!(page.find_slot_before(&Constant::int(10))?, 0);
+        assert_eq!(page.find_slot_before(&Constant::int(20))?, 1);
+        assert_eq!(page.find_slot_before(&Constant::int(30))?, 2);
+        assert_eq!(page.find_slot_before(&Constant::int(40))?, 3);
+        assert_eq!(page.find_slot_before(&Constant::int(50))?, 4);
+
         Ok(())
     }
 } 
