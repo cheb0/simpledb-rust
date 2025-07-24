@@ -68,16 +68,39 @@ mod tests {
     use crate::log::LogMgr;
     use tempfile::TempDir;
 
+    struct TestEnvironment {
+        _temp_dir: TempDir, // Keep temp_dir alive
+        file_mgr: Arc<FileMgr>,
+        buffer_mgr: BufferMgr,
+    }
+
+    impl TestEnvironment {
+        fn new() -> DbResult<Self> {
+            let temp_dir = TempDir::new().unwrap();
+            let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
+            let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
+            let buffer_mgr = BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 3);
+            
+            Ok(TestEnvironment {
+                _temp_dir: temp_dir,
+                file_mgr,
+                buffer_mgr,
+            })
+        }
+
+        fn create_buffer_list(&self) -> BufferList<'_> {
+            BufferList::new(&self.buffer_mgr)
+        }
+    }
+
     #[test]
     fn test_buffer_list() -> DbResult<()> {
-        let temp_dir = TempDir::new().unwrap();
-        let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
-        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
-        let buffer_mgr = BufferMgr::new(file_mgr.clone(), log_mgr.clone(), 3);
-        let mut buffer_list = BufferList::new(&buffer_mgr);
+        let env = TestEnvironment::new()?;
+        let mut buffer_list = env.create_buffer_list();
+        
         let blocks_cnt = 3;
         for _ in 0..blocks_cnt {
-            file_mgr.append("testfile")?;
+            env.file_mgr.append("testfile")?;
         }
 
         let block1 = BlockId::new("testfile".to_string(), 1);
@@ -101,13 +124,10 @@ mod tests {
 
     #[test]
     fn test_pin_already_pinned_block() -> DbResult<()> {
-        let temp_dir = TempDir::new().unwrap();
-        let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
-        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
-        let buffer_mgr = BufferMgr::new(file_mgr.clone(), log_mgr.clone(), 3);
-        let mut buffer_list = BufferList::new(&buffer_mgr);
+        let env = TestEnvironment::new()?;
+        let mut buffer_list = env.create_buffer_list();
         
-        file_mgr.append("testfile")?;
+        env.file_mgr.append("testfile")?;
         
         let block = BlockId::new("testfile".to_string(), 0);
         buffer_list.pin(&block)?;

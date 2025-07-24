@@ -173,21 +173,39 @@ mod tests {
     use crate::log::LogMgr;
     use tempfile::TempDir;
 
+    struct TestEnvironment {
+        _temp_dir: TempDir,
+        file_mgr: Arc<FileMgr>,
+        buffer_mgr: Arc<BufferMgr>,
+    }
+
+    impl TestEnvironment {
+        fn new(buffer_count: usize) -> DbResult<Self> {
+            let temp_dir = TempDir::new().unwrap();
+            let file_mgr = Arc::new(FileMgr::new(temp_dir.path().to_path_buf(), 400)?);
+            let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
+            let buffer_mgr = Arc::new(BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), buffer_count));
+            
+            Ok(TestEnvironment {
+                _temp_dir: temp_dir,
+                file_mgr,
+                buffer_mgr,
+            })
+        }
+    }
+
     #[test]
     fn test_buffer_pin_and_modify() -> DbResult<()> {
-        let temp_dir = TempDir::new().unwrap();
-        let file_mgr = Arc::new(FileMgr::new(temp_dir.path().to_path_buf(), 400)?);
-        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
-        let buffer_mgr = BufferMgr::new(file_mgr.clone(), log_mgr.clone(), 3);
+        let env = TestEnvironment::new(3)?;
         let blocks_cnt = 3;
         for _ in 0..blocks_cnt {
-            file_mgr.append("testfile")?;
+            env.file_mgr.append("testfile")?;
         }
 
         let block = BlockId::new("testfile".to_string(), 1);
-        let pinned_buf = buffer_mgr.pin(&block)?;
+        let pinned_buf = env.buffer_mgr.pin(&block)?;
 
-        assert_eq!(buffer_mgr.available(), 2);
+        assert_eq!(env.buffer_mgr.available(), 2);
 
         {
             let mut buffer: std::cell::RefMut<'_, Buffer> = pinned_buf.borrow_mut();
@@ -195,13 +213,13 @@ mod tests {
             buffer.set_modified(1, 0); // Set as modified by transaction 1
         }
 
-        assert_eq!(buffer_mgr.available(), 2);
+        assert_eq!(env.buffer_mgr.available(), 2);
 
         drop(pinned_buf);
 
-        assert_eq!(buffer_mgr.available(), 3);
+        assert_eq!(env.buffer_mgr.available(), 3);
 
-        let pinned_guard = buffer_mgr.pin(&block)?;
+        let pinned_guard = env.buffer_mgr.pin(&block)?;
         {
             let buffer = pinned_guard.borrow();
             assert_eq!(buffer.page().get_int(0), 123);
@@ -212,27 +230,20 @@ mod tests {
 
     #[test]
     fn test_buffer_manager_waiting_for_buffer() -> DbResult<()> {
-        let temp_dir = TempDir::new().unwrap();
-        let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
-        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
-        let buffer_mgr = Arc::new(BufferMgr::new(
-            Arc::clone(&file_mgr), 
-            Arc::clone(&log_mgr), 
-            1)
-        );
+        let env = TestEnvironment::new(1)?;
 
         let blocks_cnt = 10;
         for _ in 0..blocks_cnt {
-            file_mgr.append("testfile")?;
+            env.file_mgr.append("testfile")?;
         }
         
         let blk1 = BlockId::new("testfile".to_string(), 0);
         let blk2 = BlockId::new("testfile".to_string(), 1);
         
-        let guard1 = buffer_mgr.pin(&blk1)?;
-        assert_eq!(buffer_mgr.available(), 0);
+        let guard1 = env.buffer_mgr.pin(&blk1)?;
+        assert_eq!(env.buffer_mgr.available(), 0);
         
-        let buffer_mgr_clone = Arc::clone(&buffer_mgr);
+        let buffer_mgr_clone = Arc::clone(&env.buffer_mgr);
         let blk2_clone = blk2.clone();
         
         let handle = thread::spawn(move || {
@@ -248,32 +259,27 @@ mod tests {
         drop(guard1);
         
         handle.join().unwrap();
-        assert_eq!(buffer_mgr.available(), 1);
+        assert_eq!(env.buffer_mgr.available(), 1);
         
         Ok(())
     }
 
     #[test]
     fn test_buffer_manager_concurrent_access() -> DbResult<()> {
-        let temp_dir = TempDir::new().unwrap();
-        let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
-        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
-        let buffer_mgr = Arc::new(
-            BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 3)
-        );
+        let env = TestEnvironment::new(3)?;
 
         let threads_cnt = 5;
         let ops_per_thread = 100;
         let blocks_cnt = threads_cnt * ops_per_thread;
         for _ in 0..blocks_cnt {
-            file_mgr.append("testfile")?;
+            env.file_mgr.append("testfile")?;
         }
 
         let barrier = Arc::new(Barrier::new(threads_cnt));
         
         let mut handles = Vec::new();
         for thread_id in 0..threads_cnt {
-            let buffer_mgr_clone = Arc::clone(&buffer_mgr);
+            let buffer_mgr_clone = Arc::clone(&env.buffer_mgr);
             let barrier_clone = Arc::clone(&barrier);
             
             let handle = thread::spawn(move || {
@@ -301,28 +307,23 @@ mod tests {
             handle.join().unwrap();
         }
         
-        assert_eq!(buffer_mgr.available(), 3);
+        assert_eq!(env.buffer_mgr.available(), 3);
         
         Ok(())
     }
 
     #[test]
     fn test_buffer_manager_buffer_abort() -> DbResult<()> {
-        let temp_dir = TempDir::new().unwrap();
-        let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
-        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
-        let blocks_cnt = 3;
-        for _ in 0..blocks_cnt {
-            file_mgr.append("testfile")?;
-        }
-        let buffer_mgr = BufferMgr::new(
-            Arc::clone(&file_mgr), 
-            Arc::clone(&log_mgr), 
-            1
-        );
+        let env = TestEnvironment::new(1)?;
+        let buffer_mgr = &env.buffer_mgr;
         
         let blk1 = BlockId::new("testfile".to_string(), 1);
         let blk2 = BlockId::new("testfile".to_string(), 2);
+
+        let blocks_cnt = 3;
+        for _ in 0..blocks_cnt {
+            env.file_mgr.append("testfile")?;
+        }
         
         let guard1 = buffer_mgr.pin(&blk1)?;
 
@@ -351,11 +352,9 @@ mod tests {
 
     #[test]
     fn test_pin_same_block_returns_same_buffer() -> DbResult<()> {
-        let temp_dir = TempDir::new().unwrap();
-        let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
-        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
-        let buffer_mgr = BufferMgr::new(file_mgr.clone(), log_mgr.clone(), 3);
-        file_mgr.append("testfile")?;
+        let env = TestEnvironment::new(3)?;
+        let buffer_mgr = &env.buffer_mgr;
+        env.file_mgr.append("testfile")?;
         
         let blk = BlockId::new("testfile".to_string(), 0);
         

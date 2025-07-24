@@ -215,17 +215,48 @@ impl<'a> Clone for Transaction<'a> {
 #[cfg(test)]
 mod tests {
     use crate::tx::concurrency::lock_table::LockTable;
-
     use super::*;
     use tempfile::TempDir;
 
-     #[test]
+    struct TestEnvironment {
+        _temp_dir: TempDir,
+        file_mgr: Arc<FileMgr>,
+        log_mgr: Arc<LogMgr>,
+        buffer_mgr: Arc<BufferMgr>,
+        lock_table: Arc<LockTable>,
+    }
+
+    impl TestEnvironment {
+        fn new() -> DbResult<Self> {
+            let temp_dir = TempDir::new().unwrap();
+            let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
+            let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
+            let buffer_mgr = Arc::new(BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 3));
+            let lock_table = Arc::new(LockTable::new());
+            
+            Ok(TestEnvironment {
+                _temp_dir: temp_dir,
+                file_mgr,
+                log_mgr,
+                buffer_mgr,
+                lock_table,
+            })
+        }
+
+        fn new_transaction(&self) -> DbResult<Transaction<'_>> {
+            Transaction::new(
+                Arc::clone(&self.file_mgr),
+                Arc::clone(&self.log_mgr),
+                &self.buffer_mgr,
+                Arc::clone(&self.lock_table)
+            )
+        }
+    }
+
+    #[test]
     fn test_transaction_basic() -> DbResult<()> {
-        let temp_dir = TempDir::new().unwrap();
-        let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
-        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
-        let buffer_mgr = Arc::new(BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 3));
-        let tx: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr, Arc::new(LockTable::new()))?;
+        let env = TestEnvironment::new()?;
+        let tx = env.new_transaction()?;
         
         let blk = tx.append("testfile")?;
         tx.pin(&blk)?;
@@ -243,13 +274,9 @@ mod tests {
 
     #[test]
     fn test_transaction_rollback1() -> DbResult<()> {
-        let temp_dir = TempDir::new().unwrap();
-        let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
-        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
-        let buffer_mgr = Arc::new(BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 3));
+        let env = TestEnvironment::new()?;
         
-        let tx1: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr, Arc::new(LockTable::new()))?;
-
+        let tx1 = env.new_transaction()?;
         let blk1 = tx1.append("testfile")?;
 
         tx1.pin(&blk1)?;
@@ -258,7 +285,7 @@ mod tests {
         
         tx1.commit()?;
 
-        let tx2: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr, Arc::new(LockTable::new()))?;
+        let tx2 = env.new_transaction()?;
         tx2.pin(&blk1)?;
 
         let int_val = tx2.get_int(&blk1, 50)?;
@@ -270,25 +297,20 @@ mod tests {
         tx2.set_string(&blk1, 200, "CDE", true)?;
         tx2.rollback()?;
 
-        let tx3: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr, Arc::new(LockTable::new()))?;
+        let tx3 = env.new_transaction()?;
         tx3.pin(&blk1)?;
 
         let int_val2 = tx3.get_int(&blk1, 50)?;
         assert_eq!(int_val2, 777);
-
 
         Ok(())
     }
 
     #[test]
     fn test_transaction_rollback() -> DbResult<()> {
-        let temp_dir = TempDir::new().unwrap();
-        let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
-        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
-        let buffer_mgr = Arc::new(BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 3));
+        let env = TestEnvironment::new()?;
         
-        let tx1: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr, Arc::new(LockTable::new()))?;
-
+        let tx1 = env.new_transaction()?;
         let blk1 = tx1.append("testfile")?;
 
         tx1.pin(&blk1)?;
@@ -298,7 +320,7 @@ mod tests {
         
         tx1.commit()?;
 
-        let tx2: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr, Arc::new(LockTable::new()))?;
+        let tx2 = env.new_transaction()?;
         tx2.pin(&blk1)?;
 
         let value1 = tx2.get_int(&blk1, 50)?;
@@ -313,7 +335,7 @@ mod tests {
         tx2.set_string(&blk1, 300, "CDE", true)?;
         tx2.rollback()?;
 
-        let tx3: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr, Arc::new(LockTable::new()))?;
+        let tx3 = env.new_transaction()?;
         tx3.pin(&blk1)?;
 
         let value1 = tx3.get_int(&blk1, 50)?;

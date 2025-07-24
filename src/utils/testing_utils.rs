@@ -10,7 +10,7 @@ const TEST_PAGE_SIZE: usize = 400;
 /// DB is dropped.
 pub struct TempSimpleDB<'a> {
     db: Option<SimpleDB<'a>>,
-    dir: TempDir,
+    _dir: TempDir,
 }
 
 impl<'a> Deref for TempSimpleDB<'a> {
@@ -40,5 +40,5 @@ pub fn temp_db_with_cfg<'a>(mut cfg_updater: impl FnMut(Config) -> Config) -> Db
     cfg = cfg_updater(cfg);
 
     let db = SimpleDB::with_config(cfg)?;
-    return Ok(TempSimpleDB{ db: Some(db), dir: temp_dir});
+    return Ok(TempSimpleDB{ db: Some(db), _dir: temp_dir});
 }

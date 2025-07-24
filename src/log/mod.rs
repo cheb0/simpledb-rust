@@ -183,20 +183,42 @@ mod tests {
 
     use super::*;
     use std::sync::Arc;
-    use tempfile::tempdir;
+    use tempfile::TempDir;
+
+    struct TestEnvironment {
+        _temp_dir: TempDir,
+        file_mgr: Arc<FileMgr>,
+        log_mgr: Arc<LogMgr>,
+    }
+
+    impl TestEnvironment {
+        fn new() -> DbResult<Self> {
+            Self::new_with_block_size(400)
+        }
+
+        fn new_with_block_size(block_size: usize) -> DbResult<Self> {
+            let temp_dir = TempDir::new().unwrap();
+            let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), block_size)?);
+            let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
+            
+            Ok(TestEnvironment {
+                _temp_dir: temp_dir,
+                file_mgr,
+                log_mgr,
+            })
+        }
+    }
 
     #[test]
     fn test_log_manager_basic() -> DbResult<()> {
-        let temp_dir = tempdir()?;
-        let file_mgr: Arc<FileMgr> = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
-        let log_mgr = LogMgr::new(Arc::clone(&file_mgr), "testlog")?;
+        let env = TestEnvironment::new()?;
         
         let test_record = b"This is a test log record";
-        let lsn = log_mgr.append(test_record)?;
+        let lsn = env.log_mgr.append(test_record)?;
         assert_eq!(lsn, 1); // First LSN should be 1
         
         // Retrieve the record using an iterator
-        let mut iter = log_mgr.iterator()?;
+        let mut iter = env.log_mgr.iterator()?;
         assert!(iter.has_next());
         let retrieved_rec: Vec<u8> = iter.next()?;
         assert_eq!(retrieved_rec, test_record);
@@ -207,9 +229,7 @@ mod tests {
     
     #[test]
     fn test_log_manager_multiple_records() -> DbResult<()> {
-        let temp_dir = tempdir()?;
-        let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
-        let log_mgr = LogMgr::new(Arc::clone(&file_mgr), "testlog")?;
+        let env = TestEnvironment::new()?;
         
         let records = vec![
             b"First log record".to_vec(),
@@ -221,7 +241,7 @@ mod tests {
         
         let mut lsns = Vec::new();
         for rec in &records {
-            let lsn = log_mgr.append(rec)?;
+            let lsn = env.log_mgr.append(rec)?;
             lsns.push(lsn);
         }
         
@@ -229,7 +249,7 @@ mod tests {
             assert_eq!(*lsn, (i + 1) as i32);
         }
         
-        let mut iter = log_mgr.iterator()?;
+        let mut iter = env.log_mgr.iterator()?;
         let mut retrieved_records = Vec::new();
         
         while iter.has_next() {
@@ -245,10 +265,7 @@ mod tests {
     
     #[test]
     fn test_log_manager_block_boundary() -> DbResult<()> {
-        let temp_dir = tempdir()?;
-        let block_size = 100;
-        let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), block_size)?);
-        let log_mgr = LogMgr::new(Arc::clone(&file_mgr), "testlog")?;
+        let env = TestEnvironment::new_with_block_size(100)?;
         
         let mut records = Vec::new();
         for i in 0..1000 {
@@ -257,10 +274,10 @@ mod tests {
         }
         
         for rec in &records {
-            log_mgr.append(rec)?;
+            env.log_mgr.append(rec)?;
         }
         
-        let mut iter = log_mgr.iterator()?;
+        let mut iter = env.log_mgr.iterator()?;
         let mut retrieved_records = Vec::new();
         
         while iter.has_next() {
@@ -276,8 +293,7 @@ mod tests {
     
     #[test]
     fn test_log_manager_persistence() -> DbResult<()> {
-        let temp_dir = tempdir()?;
-        let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
+        let env = TestEnvironment::new()?;
         let records = vec![
             b"First log record".to_vec(),
             b"Second log record".to_vec(),
@@ -286,7 +302,7 @@ mod tests {
         
         // First session: create log manager and append records
         {
-            let log_mgr = LogMgr::new(Arc::clone(&file_mgr), "testlog")?;
+            let log_mgr = LogMgr::new(Arc::clone(&env.file_mgr), "testlog")?;
             
             for rec in &records {
                 log_mgr.append(rec)?;
@@ -296,7 +312,7 @@ mod tests {
         
         // Second session: create a new log manager and read the records
         {
-            let log_mgr = LogMgr::new(Arc::clone(&file_mgr), "testlog")?;
+            let log_mgr = LogMgr::new(Arc::clone(&env.file_mgr), "testlog")?;
             
             // Retrieve records using an iterator
             let mut iter: LogIterator<'_> = log_mgr.iterator()?;
@@ -317,9 +333,7 @@ mod tests {
         use std::thread;
         use std::sync::{Arc, Barrier};
 
-        let temp_dir = tempdir()?;
-        let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 4096)?);
-        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
+        let env = TestEnvironment::new_with_block_size(4096)?;
 
         let thread_cnt = 10;
         let records_per_thread = 50000;
@@ -328,7 +342,7 @@ mod tests {
         let mut handles = Vec::new();
 
         for thread_id in 0..thread_cnt {
-            let log_mgr_clone = Arc::clone(&log_mgr);
+            let log_mgr_clone = Arc::clone(&env.log_mgr);
             let barrier_clone = Arc::clone(&barrier);
 
             let handle = thread::spawn(move || {
@@ -361,7 +375,7 @@ mod tests {
             assert_eq!(*lsn, (i + 1) as i32);
         }
         
-        let mut iter = log_mgr.iterator()?;
+        let mut iter = env.log_mgr.iterator()?;
         let mut retrieved_records = Vec::new();
 
         while iter.has_next() {
