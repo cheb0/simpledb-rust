@@ -1,5 +1,6 @@
 use std::{cell::RefCell, rc::Rc, sync::{atomic::{AtomicI32, Ordering}, Arc}};
-use crate::{error::DbError, storage::{BlockId, FileMgr}};
+
+use crate::{error::DbError, storage::{BlockId, FileMgr}, tx::concurrency::{ConcurrencyMgr, LockTable}};
 use crate::buffer::{BufferMgr, BufferList};
 use crate::log::LogMgr;
 use crate::error::DbResult;
@@ -12,6 +13,7 @@ static NEXT_TX_ID: AtomicI32 = AtomicI32::new(0);
 pub struct TransactionInner<'a> {
     id: i32,
     buffer_mgr: &'a BufferMgr,
+    concurrency_mgr: ConcurrencyMgr,
     log_mgr: Arc<LogMgr>,
     file_mgr: Arc<FileMgr>,
     buffers: BufferList<'a>,
@@ -26,6 +28,7 @@ impl<'a> Transaction<'a> {
         file_mgr: Arc<FileMgr>,
         log_mgr: Arc<LogMgr>,
         buffer_mgr: &'a BufferMgr,
+        lock_table: Arc<LockTable>,
     ) -> DbResult<Self> {
         let tx_id = NEXT_TX_ID.fetch_add(1, Ordering::SeqCst) + 1;
 
@@ -41,6 +44,7 @@ impl<'a> Transaction<'a> {
             file_mgr,
             id: tx_id,
             buffers,
+            concurrency_mgr: ConcurrencyMgr::new(lock_table),
         };
         
         Ok(Transaction {
@@ -49,31 +53,35 @@ impl<'a> Transaction<'a> {
     }
 
     pub fn commit(&self) -> DbResult<()> {
-        let mut inner = self.inner.borrow_mut();
-        inner.buffer_mgr.flush_all(inner.id)?;
+        let mut tx_inner = self.inner.borrow_mut();
+        tx_inner.buffer_mgr.flush_all(tx_inner.id)?;
         
-        let commit_record = CommitRecord::new(inner.id);
+        let commit_record = CommitRecord::new(tx_inner.id);
         let bytes = commit_record.to_bytes()?;
-        let lsn = inner.log_mgr.append(&bytes)?;
-        inner.log_mgr.flush(lsn)?;
+        let lsn = tx_inner.log_mgr.append(&bytes)?;
+        tx_inner.log_mgr.flush(lsn)?;
         // TODO fsync
+
+        tx_inner.concurrency_mgr.release();
         
-        inner.buffers.unpin_all();
+        tx_inner.buffers.unpin_all();
         Ok(())
     }
 
     pub fn rollback(&self) -> DbResult<()> {
         self.do_rollback()?;
         
-        let mut inner = self.inner.borrow_mut();
-        inner.buffer_mgr.flush_all(inner.id)?;
+        let mut tx_inner = self.inner.borrow_mut();
+        tx_inner.buffer_mgr.flush_all(tx_inner.id)?;
         
-        let rollback_record = RollbackRecord::create(inner.id);
+        let rollback_record = RollbackRecord::create(tx_inner.id);
         let bytes = rollback_record.to_bytes()?;
-        let lsn = inner.log_mgr.append(&bytes)?;
-        inner.log_mgr.flush(lsn)?;
+        let lsn = tx_inner.log_mgr.append(&bytes)?;
+        tx_inner.log_mgr.flush(lsn)?;
         
-        inner.buffers.unpin_all();
+        tx_inner.concurrency_mgr.release();
+
+        tx_inner.buffers.unpin_all();
         Ok(())
     }
 
@@ -110,24 +118,27 @@ impl<'a> Transaction<'a> {
     }
 
     pub fn get_int(&self, blk: &BlockId, offset: usize) -> DbResult<i32> {
-        let inner = self.inner.borrow();
-        let guard = inner.buffers.get_buffer(blk)
+        let mut tx_inner = self.inner.borrow_mut();
+        tx_inner.concurrency_mgr.lock_shared(blk)?;
+        let guard = tx_inner.buffers.get_buffer(blk)
             .ok_or_else(|| DbError::BufferNotPinned(blk.clone()))?;
         let buffer = guard.borrow();
         Ok(buffer.page().get_int(offset))
     }
 
     pub fn get_string(&self, blk: &BlockId, offset: usize) -> DbResult<String> {
-        let inner = self.inner.borrow();
-        let guard = inner.buffers.get_buffer(blk)
+        let mut tx_inner = self.inner.borrow_mut();
+        tx_inner.concurrency_mgr.lock_shared(blk)?;
+        let guard = tx_inner.buffers.get_buffer(blk)
             .ok_or_else(|| DbError::BufferNotPinned(blk.clone()))?;
         let buffer = guard.borrow();
         Ok(buffer.page().get_string(offset))
     }
 
     pub fn set_int(&self, blk: &BlockId, offset: usize, val: i32, log: bool/*TODO should be true by default*/) -> DbResult<()> {
-        let inner = self.inner.borrow();
-        let guard = inner.buffers.get_buffer(blk)
+        let mut tx_inner = self.inner.borrow_mut();
+        tx_inner.concurrency_mgr.lock_exclusive(blk)?;
+        let guard = tx_inner.buffers.get_buffer(blk)
             .ok_or_else(|| DbError::BufferNotPinned(blk.clone()))?;
         let mut buffer = guard.borrow_mut();
         
@@ -135,11 +146,11 @@ impl<'a> Transaction<'a> {
             let old_val = buffer.page().get_int(offset);
             let blk_clone = buffer.block().expect("Buffer has no block assigned").clone();
             
-            let set_int_record = SetIntRecord::new(inner.id, blk_clone, offset, old_val);
+            let set_int_record = SetIntRecord::new(tx_inner.id, blk_clone, offset, old_val);
             let bytes = set_int_record.to_bytes()?;
-            let lsn = inner.log_mgr.append(&bytes)?;
+            let lsn = tx_inner.log_mgr.append(&bytes)?;
             
-            buffer.set_modified(inner.id, lsn);
+            buffer.set_modified(tx_inner.id, lsn);
         }
         
         buffer.contents_mut().set_int(offset, val);
@@ -147,8 +158,9 @@ impl<'a> Transaction<'a> {
     }
 
     pub fn set_string(&self, blk: &BlockId, offset: usize, val: &str, log: bool) -> DbResult<()> {
-        let inner = self.inner.borrow();
-        let guard = inner.buffers.get_buffer(blk)
+        let mut tx_inner = self.inner.borrow_mut();
+        tx_inner.concurrency_mgr.lock_exclusive(blk)?;
+        let guard = tx_inner.buffers.get_buffer(blk)
             .ok_or_else(|| DbError::BufferNotPinned(blk.clone()))?;
         let mut buffer = guard.borrow_mut();
         
@@ -156,11 +168,11 @@ impl<'a> Transaction<'a> {
             let old_val = buffer.page().get_string(offset);
             let blk_clone = buffer.block().expect("Buffer has no block assigned").clone();
             
-            let set_string_record = SetStringRecord::new(inner.id, blk_clone, offset, old_val);
+            let set_string_record = SetStringRecord::new(tx_inner.id, blk_clone, offset, old_val);
             let bytes = set_string_record.to_bytes()?;
-            let lsn = inner.log_mgr.append(&bytes)?;
+            let lsn = tx_inner.log_mgr.append(&bytes)?;
             
-            buffer.set_modified(inner.id, lsn);
+            buffer.set_modified(tx_inner.id, lsn);
         }
         
         buffer.contents_mut().set_string(offset, val);
@@ -168,13 +180,17 @@ impl<'a> Transaction<'a> {
     }
 
     pub fn size(&self, file_name: &str) -> DbResult<i32> {
-        let inner = self.inner.borrow();
-        Ok(inner.file_mgr.block_cnt(file_name)?)
+        let mut tx_inner = self.inner.borrow_mut();
+        let dummy_blk = BlockId::new(file_name.to_string(), -1);
+        tx_inner.concurrency_mgr.lock_shared(&dummy_blk)?;
+        Ok(tx_inner.file_mgr.block_cnt(file_name)?)
     }
 
     pub fn append(&self, file_name: &str) -> DbResult<BlockId> {
-        let inner = self.inner.borrow();
-        Ok(inner.file_mgr.append(file_name)?)
+        let mut tx_inner = self.inner.borrow_mut();
+        let dummy_blk = BlockId::new(file_name.to_string(), -1);
+        tx_inner.concurrency_mgr.lock_exclusive(&dummy_blk)?;
+        Ok(tx_inner.file_mgr.append(file_name)?)
     }
 
     pub fn block_size(&self) -> usize {
@@ -198,6 +214,8 @@ impl<'a> Clone for Transaction<'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::tx::concurrency::lock_table::LockTable;
+
     use super::*;
     use tempfile::TempDir;
 
@@ -207,7 +225,7 @@ mod tests {
         let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
         let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
         let buffer_mgr = Arc::new(BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 3));
-        let tx: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
+        let tx: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr, Arc::new(LockTable::new()))?;
         
         let blk = tx.append("testfile")?;
         tx.pin(&blk)?;
@@ -230,7 +248,7 @@ mod tests {
         let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
         let buffer_mgr = Arc::new(BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 3));
         
-        let tx1: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
+        let tx1: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr, Arc::new(LockTable::new()))?;
 
         let blk1 = tx1.append("testfile")?;
 
@@ -240,7 +258,7 @@ mod tests {
         
         tx1.commit()?;
 
-        let tx2: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
+        let tx2: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr, Arc::new(LockTable::new()))?;
         tx2.pin(&blk1)?;
 
         let int_val = tx2.get_int(&blk1, 50)?;
@@ -252,7 +270,7 @@ mod tests {
         tx2.set_string(&blk1, 200, "CDE", true)?;
         tx2.rollback()?;
 
-        let tx3: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
+        let tx3: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr, Arc::new(LockTable::new()))?;
         tx3.pin(&blk1)?;
 
         let int_val2 = tx3.get_int(&blk1, 50)?;
@@ -269,7 +287,7 @@ mod tests {
         let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
         let buffer_mgr = Arc::new(BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 3));
         
-        let tx1: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
+        let tx1: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr, Arc::new(LockTable::new()))?;
 
         let blk1 = tx1.append("testfile")?;
 
@@ -280,7 +298,7 @@ mod tests {
         
         tx1.commit()?;
 
-        let tx2: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
+        let tx2: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr, Arc::new(LockTable::new()))?;
         tx2.pin(&blk1)?;
 
         let value1 = tx2.get_int(&blk1, 50)?;
@@ -295,7 +313,7 @@ mod tests {
         tx2.set_string(&blk1, 300, "CDE", true)?;
         tx2.rollback()?;
 
-        let tx3: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr)?;
+        let tx3: Transaction<'_> = Transaction::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), &buffer_mgr, Arc::new(LockTable::new()))?;
         tx3.pin(&blk1)?;
 
         let value1 = tx3.get_int(&blk1, 50)?;

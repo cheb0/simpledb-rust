@@ -9,6 +9,7 @@ use crate::metadata::MetadataMgr;
 
 use crate::plan::Planner;
 use crate::storage::FileMgr;
+use crate::tx::concurrency::LockTable;
 use crate::tx::Transaction;
 
 use super::Config;
@@ -19,6 +20,7 @@ pub struct SimpleDB<'a> {
     buffer_mgr: Arc<BufferMgr>,
     planner: Planner,
     metadata_mgr: Arc<MetadataMgr>,
+    lock_table: Arc<LockTable>,
     _phantom: PhantomData<&'a ()>,
 }
 
@@ -32,13 +34,14 @@ impl<'a> SimpleDB<'a> {
             Arc::clone(&log_mgr),
             config.buffer_capacity,
         ));
-
+        let lock_table = Arc::new(LockTable::new());
 
         // TODO recover if is_new
         let tx = Transaction::new(
             Arc::clone(&file_mgr),
             Arc::clone(&log_mgr),
             &buffer_mgr,
+            Arc::clone(&lock_table),
         )?;
         
         let md_mgr = Arc::new(MetadataMgr::new(file_mgr.is_new(), tx.clone())?);
@@ -51,6 +54,7 @@ impl<'a> SimpleDB<'a> {
             buffer_mgr: Arc::clone(&buffer_mgr),
             metadata_mgr: md_mgr,
             planner: planner,
+            lock_table,
             _phantom: PhantomData,
         })
     }
@@ -64,6 +68,7 @@ impl<'a> SimpleDB<'a> {
             Arc::clone(&self.file_mgr),
             Arc::clone(&self.log_mgr),
             &self.buffer_mgr,
+            Arc::clone(&self.lock_table),
         )?;
         
         let md_mgr = MetadataMgr::new(false, tx.clone())?;
@@ -78,6 +83,7 @@ impl<'a> SimpleDB<'a> {
             Arc::clone(&self.file_mgr),
             Arc::clone(&self.log_mgr),
             &self.buffer_mgr,
+            Arc::clone(&self.lock_table),
         )
     }
 

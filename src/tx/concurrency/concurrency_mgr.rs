@@ -11,6 +11,8 @@ pub enum LockType {
     Exclusive,
 }
 
+/// Concurrency manager which maintains all locks held by transactions.
+/// Interrior mutable.
 pub struct ConcurrencyMgr {
     pub /*TODO*/ lock_table: Arc<LockTable>,
     locks: HashMap<BlockId, LockType>,
@@ -19,7 +21,7 @@ pub struct ConcurrencyMgr {
 impl ConcurrencyMgr {
     pub fn new(lock_table: Arc<LockTable>) -> Self {
         Self {
-            lock_table,
+            lock_table: lock_table,
             locks: HashMap::new(),
         }
     }
