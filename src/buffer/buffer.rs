@@ -8,7 +8,7 @@ use crate::storage::Page;
 
 /// Represents a buffer, which is a memory region that contains a disk block.
 pub struct Buffer {
-    file_mgr: Arc<FileMgr>,
+    file_mgr: Arc<dyn FileMgr>,
     log_mgr: Arc<LogMgr>,
     page: Page,
     block_id: Option<BlockId>,
@@ -17,7 +17,7 @@ pub struct Buffer {
 }
 
 impl Buffer {
-    pub fn new(file_mgr: Arc<FileMgr>, log_mgr: Arc<LogMgr>) -> Self {
+    pub fn new(file_mgr: Arc<dyn FileMgr>, log_mgr: Arc<LogMgr>) -> Self {
         let block_size = file_mgr.block_size();
         Buffer {
             file_mgr,

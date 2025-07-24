@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc, sync::{atomic::{AtomicI32, Ordering}, Arc}};
 
-use crate::{error::DbError, storage::{BlockId, FileMgr}, tx::concurrency::{ConcurrencyMgr, LockTable}};
+use crate::{error::DbError, storage::{BlockId, FileMgr, BasicFileMgr}, tx::concurrency::{ConcurrencyMgr, LockTable}};
 use crate::buffer::{BufferMgr, BufferList};
 use crate::log::LogMgr;
 use crate::error::DbResult;
@@ -15,7 +15,7 @@ pub struct TransactionInner<'a> {
     buffer_mgr: &'a BufferMgr,
     concurrency_mgr: ConcurrencyMgr,
     log_mgr: Arc<LogMgr>,
-    file_mgr: Arc<FileMgr>,
+    file_mgr: Arc<dyn FileMgr>,
     buffers: BufferList<'a>,
 }
 
@@ -25,7 +25,7 @@ pub struct Transaction<'a> {
 
 impl<'a> Transaction<'a> {
     pub fn new(
-        file_mgr: Arc<FileMgr>,
+        file_mgr: Arc<dyn FileMgr>,
         log_mgr: Arc<LogMgr>,
         buffer_mgr: &'a BufferMgr,
         lock_table: Arc<LockTable>,
@@ -220,7 +220,7 @@ mod tests {
 
     struct TestEnvironment {
         _temp_dir: TempDir,
-        file_mgr: Arc<FileMgr>,
+        file_mgr: Arc<dyn FileMgr>,
         log_mgr: Arc<LogMgr>,
         buffer_mgr: Arc<BufferMgr>,
         lock_table: Arc<LockTable>,
@@ -229,7 +229,7 @@ mod tests {
     impl TestEnvironment {
         fn new() -> DbResult<Self> {
             let temp_dir = TempDir::new().unwrap();
-            let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
+            let file_mgr: Arc<dyn FileMgr> = Arc::new(BasicFileMgr::new(temp_dir.path(), 400)?);
             let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
             let buffer_mgr = Arc::new(BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 3));
             let lock_table = Arc::new(LockTable::new());

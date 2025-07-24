@@ -8,14 +8,14 @@ use crate::log::LogMgr;
 use crate::metadata::MetadataMgr;
 
 use crate::plan::Planner;
-use crate::storage::FileMgr;
+use crate::storage::{FileMgr, BasicFileMgr};
 use crate::tx::concurrency::LockTable;
 use crate::tx::Transaction;
 
 use super::Config;
 
 pub struct SimpleDB<'a> {
-    file_mgr: Arc<FileMgr>,
+    file_mgr: Arc<dyn FileMgr>,
     log_mgr: Arc<LogMgr>,
     buffer_mgr: Arc<BufferMgr>,
     planner: Planner,
@@ -26,7 +26,7 @@ pub struct SimpleDB<'a> {
 
 impl<'a> SimpleDB<'a> {
     pub fn with_config(config: Config) -> DbResult<Self> {
-        let file_mgr = Arc::new(FileMgr::new(&config.db_directory, config.block_size)?);
+        let file_mgr: Arc<dyn FileMgr> = Arc::new(BasicFileMgr::new(&config.db_directory, config.block_size)?);
         let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), config.log_file_path().to_str().unwrap())?);
         
         let buffer_mgr = Arc::new(BufferMgr::new(
@@ -87,7 +87,7 @@ impl<'a> SimpleDB<'a> {
         )
     }
 
-    pub fn file_mgr(&self) -> Arc<FileMgr> {
+    pub fn file_mgr(&self) -> Arc<dyn FileMgr> {
         Arc::clone(&self.file_mgr)
     }
 

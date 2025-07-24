@@ -8,15 +8,38 @@ use crate::error::DbResult;
 
 use super::{BlockId, Page};
 
-/// Manages the database files, handling reading and writing of pages to disk.
-pub struct FileMgr {
+/// Trait for file management operations.
+/// This allows for different implementations (e.g., basic file system, in-memory, etc.)
+/// Must be thread safe and support interrior mutability.
+pub trait FileMgr: Send + Sync {
+    /// Reads a block from disk into the provided page.
+    fn read(&self, blk: &BlockId, page: &mut Page) -> io::Result<()>;
+    
+    /// Writes a page to the specified block on disk.
+    fn write(&self, blk: &BlockId, page: &Page) -> io::Result<()>;
+    
+    /// Appends a new block to the end of the specified file and returns its BlockId.
+    fn append(&self, filename: &str) -> io::Result<BlockId>;
+    
+    /// Returns the number of blocks in the specified file.
+    fn block_cnt(&self, filename: &str) -> io::Result<i32>;
+    
+    /// Returns whether this is a new database.
+    fn is_new(&self) -> bool;
+    
+    /// Returns the block size.
+    fn block_size(&self) -> usize;
+}
+
+/// Basic implementation of FileMgr that uses the file system.
+pub struct BasicFileMgr {
     db_directory: PathBuf,
     block_size: usize,
     is_new: bool,
     open_files: Mutex<HashMap<String, File>>,
 }
 
-impl FileMgr {
+impl BasicFileMgr {
     pub fn new<P: AsRef<Path>>(db_directory: P, block_size: usize) -> DbResult<Self> {
         let db_path = db_directory.as_ref().to_path_buf();
         let is_new = !db_path.exists();
@@ -36,68 +59,12 @@ impl FileMgr {
             }
         }
 
-        Ok(FileMgr {
+        Ok(BasicFileMgr {
             db_directory: db_path,
             block_size,
             is_new,
             open_files: Mutex::new(HashMap::new()),
         })
-    }
-
-    /// Reads a block from disk into the provided page.
-    pub fn read(&self, blk: &BlockId, page: &mut Page) -> io::Result<()> {
-        let mut file = self.get_file(&blk.file_name())?;
-        let pos = blk.number() as u64 * self.block_size as u64;
-        file.seek(SeekFrom::Start(pos))?;
-        
-        let buffer = page.contents_mut();
-        file.read_exact(buffer)?;
-        
-        Ok(())
-    }
-
-    /// Writes a page to the specified block on disk.
-    pub fn write(&self, blk: &BlockId, page: &Page) -> io::Result<()> {
-        let mut file = self.get_file(&blk.file_name())?;
-        let pos = blk.number() as u64 * self.block_size as u64;
-        file.seek(SeekFrom::Start(pos))?;
-        
-        // Write the page's buffer to disk
-        file.write_all(page.contents())?;
-        file.flush()?;
-        
-        Ok(())
-    }
-
-    /// Appends a new block to the end of the specified file and returns its BlockId.
-    pub fn append(&self, filename: &str) -> io::Result<BlockId> {
-        let new_block_num = self.block_cnt(filename)?;
-        let blk = BlockId::new(filename.to_string(), new_block_num);
-        
-        let mut file = self.get_file(&blk.file_name())?;
-        let pos = blk.number() as u64 * self.block_size as u64;
-        file.seek(SeekFrom::Start(pos))?;
-        
-        let zeros = vec![0; self.block_size];
-        file.write_all(&zeros)?;
-        file.flush()?;
-        
-        Ok(blk)
-    }
-
-    /// Returns the number of blocks in the specified file.
-    pub fn block_cnt(&self, filename: &str) -> io::Result<i32> {
-        let file = self.get_file(filename)?;
-        let file_size = file.metadata()?.len();
-        Ok((file_size / self.block_size as u64) as i32)
-    }
-
-    pub fn is_new(&self) -> bool {
-        self.is_new
-    }
-
-    pub fn block_size(&self) -> usize {
-        self.block_size
     }
 
     fn get_file(&self, filename: &str) -> io::Result<impl std::ops::DerefMut<Target = File> + '_> {
@@ -139,6 +106,60 @@ impl FileMgr {
     }
 }
 
+impl FileMgr for BasicFileMgr {
+    fn read(&self, blk: &BlockId, page: &mut Page) -> io::Result<()> {
+        let mut file = self.get_file(&blk.file_name())?;
+        let pos = blk.number() as u64 * self.block_size as u64;
+        file.seek(SeekFrom::Start(pos))?;
+        
+        let buffer = page.contents_mut();
+        file.read_exact(buffer)?;
+        
+        Ok(())
+    }
+
+    fn write(&self, blk: &BlockId, page: &Page) -> io::Result<()> {
+        let mut file = self.get_file(&blk.file_name())?;
+        let pos = blk.number() as u64 * self.block_size as u64;
+        file.seek(SeekFrom::Start(pos))?;
+        
+        // Write the page's buffer to disk
+        file.write_all(page.contents())?;
+        file.flush()?;
+        
+        Ok(())
+    }
+
+    fn append(&self, filename: &str) -> io::Result<BlockId> {
+        let new_block_num = self.block_cnt(filename)?;
+        let blk = BlockId::new(filename.to_string(), new_block_num);
+        
+        let mut file = self.get_file(&blk.file_name())?;
+        let pos = blk.number() as u64 * self.block_size as u64;
+        file.seek(SeekFrom::Start(pos))?;
+        
+        let zeros = vec![0; self.block_size];
+        file.write_all(&zeros)?;
+        file.flush()?;
+        
+        Ok(blk)
+    }
+
+    fn block_cnt(&self, filename: &str) -> io::Result<i32> {
+        let file = self.get_file(filename)?;
+        let file_size = file.metadata()?.len();
+        Ok((file_size / self.block_size as u64) as i32)
+    }
+
+    fn is_new(&self) -> bool {
+        self.is_new
+    }
+
+    fn block_size(&self) -> usize {
+        self.block_size
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -147,7 +168,7 @@ mod tests {
     #[test]
     fn test_append_and_length() {
         let temp_dir = tempdir().unwrap();
-        let file_mgr = FileMgr::new(temp_dir.path(), 400).unwrap();
+        let file_mgr = BasicFileMgr::new(temp_dir.path(), 400).unwrap();
         
         let filename = "testfile";
         let blk1 = file_mgr.append(filename).unwrap();
@@ -164,7 +185,7 @@ mod tests {
     #[test]
     fn test_read_write() {
         let temp_dir = tempdir().unwrap();
-        let file_mgr = FileMgr::new(temp_dir.path(), 400).unwrap();
+        let file_mgr = BasicFileMgr::new(temp_dir.path(), 400).unwrap();
         
         let filename = "testfile";
         let blk = file_mgr.append(filename).unwrap();
@@ -185,7 +206,7 @@ mod tests {
     #[test]
     fn test_read_write_multiple_pages() {
         let temp_dir = tempdir().unwrap();
-        let file_mgr = FileMgr::new(temp_dir.path(), 400).unwrap();
+        let file_mgr = BasicFileMgr::new(temp_dir.path(), 400).unwrap();
 
         let file_name = "testfile";
         let blk1 = file_mgr.append(file_name).unwrap();
@@ -214,5 +235,26 @@ mod tests {
         file_mgr.read(&blk2, &mut page2_read).unwrap();
 
         assert_eq!(page2_read.get_string(0), "test string");
+    }
+
+    #[test]
+    fn test_file_mgr_trait() {
+        let temp_dir = tempdir().unwrap();
+        let file_mgr: Box<dyn FileMgr> = Box::new(BasicFileMgr::new(temp_dir.path(), 400).unwrap());
+        
+        let filename = "testfile";
+        let blk = file_mgr.append(filename).unwrap();
+        
+        let mut page = Page::new(400);
+        page.set_int(0, 123);
+        page.set_string(4, "Trait test");
+        
+        file_mgr.write(&blk, &page).unwrap();
+        
+        let mut page2 = Page::new(400);
+        file_mgr.read(&blk, &mut page2).unwrap();
+        
+        assert_eq!(page2.get_int(0), 123);
+        assert_eq!(page2.get_string(4), "Trait test");
     }
 } 

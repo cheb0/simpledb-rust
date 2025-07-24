@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use crate::error::{DbError, DbResult};
 use crate::storage::BlockId;
 use crate::buffer::Buffer;
-use crate::storage::file_mgr::FileMgr;
+use crate::storage::file_mgr::{FileMgr, BasicFileMgr};
 use crate::log::LogMgr;
 
 /// Manages the buffer pool, which consists of a collection of Buffer objects.
@@ -35,7 +35,7 @@ pub struct PinnedBufferGuard<'a> {
 }
 
 impl BufferMgr {
-    pub fn new(file_mgr: Arc<FileMgr>, log_mgr: Arc<LogMgr>, buffer_cnt: usize) -> Self {
+    pub fn new(file_mgr: Arc<dyn FileMgr>, log_mgr: Arc<LogMgr>, buffer_cnt: usize) -> Self {
         let mut buffers = Vec::with_capacity(buffer_cnt);
         for _ in 0..buffer_cnt {
             buffers.push(RefCell::new(
@@ -175,14 +175,14 @@ mod tests {
 
     struct TestEnvironment {
         _temp_dir: TempDir,
-        file_mgr: Arc<FileMgr>,
+        file_mgr: Arc<dyn FileMgr>,
         buffer_mgr: Arc<BufferMgr>,
     }
 
     impl TestEnvironment {
         fn new(buffer_count: usize) -> DbResult<Self> {
             let temp_dir = TempDir::new().unwrap();
-            let file_mgr = Arc::new(FileMgr::new(temp_dir.path().to_path_buf(), 400)?);
+            let file_mgr: Arc<dyn FileMgr> = Arc::new(BasicFileMgr::new(temp_dir.path().to_path_buf(), 400)?);
             let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
             let buffer_mgr = Arc::new(BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), buffer_count));
             

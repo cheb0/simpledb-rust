@@ -64,20 +64,20 @@ impl<'a> Drop for BufferList<'a> {
 mod tests {
     use super::*;
     use std::sync::Arc;
-    use crate::storage::file_mgr::FileMgr;
+    use crate::storage::file_mgr::{FileMgr, BasicFileMgr};
     use crate::log::LogMgr;
     use tempfile::TempDir;
 
     struct TestEnvironment {
         _temp_dir: TempDir, // Keep temp_dir alive
-        file_mgr: Arc<FileMgr>,
+        file_mgr: Arc<dyn FileMgr>,
         buffer_mgr: BufferMgr,
     }
 
     impl TestEnvironment {
         fn new() -> DbResult<Self> {
             let temp_dir = TempDir::new().unwrap();
-            let file_mgr = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
+            let file_mgr: Arc<dyn FileMgr> = Arc::new(BasicFileMgr::new(temp_dir.path(), 400)?);
             let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
             let buffer_mgr = BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 3);
             
