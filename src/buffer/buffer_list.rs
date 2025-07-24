@@ -64,26 +64,26 @@ impl<'a> Drop for BufferList<'a> {
 mod tests {
     use super::*;
     use std::sync::Arc;
-    use crate::storage::file_mgr::{FileMgr, BasicFileMgr};
+    use crate::storage::{StorageMgr, FileMgr};
     use crate::log::LogMgr;
     use tempfile::TempDir;
 
     struct TestEnvironment {
         _temp_dir: TempDir, // Keep temp_dir alive
-        file_mgr: Arc<dyn FileMgr>,
+        storage_mgr: Arc<dyn StorageMgr>,
         buffer_mgr: BufferMgr,
     }
 
     impl TestEnvironment {
         fn new() -> DbResult<Self> {
             let temp_dir = TempDir::new().unwrap();
-            let file_mgr: Arc<dyn FileMgr> = Arc::new(BasicFileMgr::new(temp_dir.path(), 400)?);
-            let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
-            let buffer_mgr = BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 3);
+            let storage_mgr: Arc<dyn StorageMgr> = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
+            let log_mgr = Arc::new(LogMgr::new(Arc::clone(&storage_mgr), "testlog")?);
+            let buffer_mgr = BufferMgr::new(Arc::clone(&storage_mgr), Arc::clone(&log_mgr), 3);
             
             Ok(TestEnvironment {
                 _temp_dir: temp_dir,
-                file_mgr,
+                storage_mgr,
                 buffer_mgr,
             })
         }
@@ -100,7 +100,7 @@ mod tests {
         
         let blocks_cnt = 3;
         for _ in 0..blocks_cnt {
-            env.file_mgr.append("testfile")?;
+            env.storage_mgr.append("testfile")?;
         }
 
         let block1 = BlockId::new("testfile".to_string(), 1);
@@ -127,7 +127,7 @@ mod tests {
         let env = TestEnvironment::new()?;
         let mut buffer_list = env.create_buffer_list();
         
-        env.file_mgr.append("testfile")?;
+        env.storage_mgr.append("testfile")?;
         
         let block = BlockId::new("testfile".to_string(), 0);
         buffer_list.pin(&block)?;

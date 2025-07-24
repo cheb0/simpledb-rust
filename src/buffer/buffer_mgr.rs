@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use crate::error::{DbError, DbResult};
 use crate::storage::BlockId;
 use crate::buffer::Buffer;
-use crate::storage::file_mgr::{FileMgr, BasicFileMgr};
+use crate::storage::StorageMgr;
 use crate::log::LogMgr;
 
 /// Manages the buffer pool, which consists of a collection of Buffer objects.
@@ -35,11 +35,11 @@ pub struct PinnedBufferGuard<'a> {
 }
 
 impl BufferMgr {
-    pub fn new(file_mgr: Arc<dyn FileMgr>, log_mgr: Arc<LogMgr>, buffer_cnt: usize) -> Self {
+    pub fn new(storage_mgr: Arc<dyn StorageMgr>, log_mgr: Arc<LogMgr>, buffer_cnt: usize) -> Self {
         let mut buffers = Vec::with_capacity(buffer_cnt);
         for _ in 0..buffer_cnt {
             buffers.push(RefCell::new(
-                Buffer::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr))
+                Buffer::new(Arc::clone(&storage_mgr), Arc::clone(&log_mgr))
             ));
         }
         
@@ -169,26 +169,27 @@ mod tests {
     use super::*;
     use std::thread;
     use std::sync::{Arc, Barrier};
+    use crate::storage::StorageMgr;
     use crate::storage::FileMgr;
     use crate::log::LogMgr;
     use tempfile::TempDir;
 
     struct TestEnvironment {
         _temp_dir: TempDir,
-        file_mgr: Arc<dyn FileMgr>,
+        storage_mgr: Arc<dyn StorageMgr>,
         buffer_mgr: Arc<BufferMgr>,
     }
 
     impl TestEnvironment {
         fn new(buffer_count: usize) -> DbResult<Self> {
             let temp_dir = TempDir::new().unwrap();
-            let file_mgr: Arc<dyn FileMgr> = Arc::new(BasicFileMgr::new(temp_dir.path().to_path_buf(), 400)?);
-            let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
-            let buffer_mgr = Arc::new(BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), buffer_count));
+            let storage_mgr: Arc<dyn StorageMgr> = Arc::new(FileMgr::new(temp_dir.path().to_path_buf(), 400)?);
+            let log_mgr = Arc::new(LogMgr::new(Arc::clone(&storage_mgr), "testlog")?);
+            let buffer_mgr = Arc::new(BufferMgr::new(Arc::clone(&storage_mgr), Arc::clone(&log_mgr), buffer_count));
             
             Ok(TestEnvironment {
                 _temp_dir: temp_dir,
-                file_mgr,
+                storage_mgr,
                 buffer_mgr,
             })
         }
@@ -199,7 +200,7 @@ mod tests {
         let env = TestEnvironment::new(3)?;
         let blocks_cnt = 3;
         for _ in 0..blocks_cnt {
-            env.file_mgr.append("testfile")?;
+            env.storage_mgr.append("testfile")?;
         }
 
         let block = BlockId::new("testfile".to_string(), 1);
@@ -234,7 +235,7 @@ mod tests {
 
         let blocks_cnt = 10;
         for _ in 0..blocks_cnt {
-            env.file_mgr.append("testfile")?;
+            env.storage_mgr.append("testfile")?;
         }
         
         let blk1 = BlockId::new("testfile".to_string(), 0);
@@ -272,7 +273,7 @@ mod tests {
         let ops_per_thread = 100;
         let blocks_cnt = threads_cnt * ops_per_thread;
         for _ in 0..blocks_cnt {
-            env.file_mgr.append("testfile")?;
+            env.storage_mgr.append("testfile")?;
         }
 
         let barrier = Arc::new(Barrier::new(threads_cnt));
@@ -322,7 +323,7 @@ mod tests {
 
         let blocks_cnt = 3;
         for _ in 0..blocks_cnt {
-            env.file_mgr.append("testfile")?;
+            env.storage_mgr.append("testfile")?;
         }
         
         let guard1 = buffer_mgr.pin(&blk1)?;
@@ -354,7 +355,7 @@ mod tests {
     fn test_pin_same_block_returns_same_buffer() -> DbResult<()> {
         let env = TestEnvironment::new(3)?;
         let buffer_mgr = &env.buffer_mgr;
-        env.file_mgr.append("testfile")?;
+        env.storage_mgr.append("testfile")?;
         
         let blk = BlockId::new("testfile".to_string(), 0);
         

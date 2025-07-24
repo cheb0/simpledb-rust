@@ -2,13 +2,13 @@ use std::io;
 use std::sync::{Arc, Mutex};
 
 use crate::storage::BlockId;
-use crate::storage::file_mgr::{FileMgr, BasicFileMgr};
+use crate::storage::StorageMgr;
 use crate::storage::page::Page;
 
 /// Manages the database log, which is used for recovery.
 /// It employs interrior mutability and also is thread-safe
 pub struct LogMgr {
-    file_mgr: Arc<dyn FileMgr>,
+    storage_mgr: Arc<dyn StorageMgr>,
     log_file: String,
     inner: Mutex<LogMgrInner>,
 }
@@ -21,22 +21,22 @@ struct LogMgrInner {
 }
 
 impl LogMgr {
-    pub fn new(file_mgr: Arc<dyn FileMgr>, log_file: &str) -> io::Result<Self> {
-        let block_size = file_mgr.block_size();
+    pub fn new(storage_mgr: Arc<dyn StorageMgr>, log_file: &str) -> io::Result<Self> {
+        let block_size = storage_mgr.block_size();
         let mut log_page = Page::new(block_size);
-        log_page.set_int(0, file_mgr.block_size() as i32);
+        log_page.set_int(0, storage_mgr.block_size() as i32);
         
-        let block_cnt = file_mgr.block_cnt(log_file)?;
+        let block_cnt = storage_mgr.block_cnt(log_file)?;
         let current_blk = if block_cnt == 0 {
-            Self::append_new_block(&*file_mgr, log_file)?
+            Self::append_new_block(&*storage_mgr, log_file)?
         } else {
             let blk = BlockId::new(log_file.to_string(), block_cnt - 1);
-            file_mgr.read(&blk, &mut log_page)?;
+            storage_mgr.read(&blk, &mut log_page)?;
             blk
         };
         
         Ok(LogMgr {
-            file_mgr,
+            storage_mgr,
             log_file: log_file.to_string(),
             inner: Mutex::new(LogMgrInner {
                 log_page,
@@ -48,7 +48,7 @@ impl LogMgr {
     }
     
     // Helper method to append a new block to the log file
-    fn append_new_block(fm: &dyn FileMgr, log_file: &str) -> io::Result<BlockId> {
+    fn append_new_block(fm: &dyn StorageMgr, log_file: &str) -> io::Result<BlockId> {
         let blk = fm.append(log_file)?;
         let blocksize = fm.block_size();
         let mut logpage = Page::new(blocksize);
@@ -59,7 +59,7 @@ impl LogMgr {
     
     /// Writes the current log page to disk.
     fn flush_internal(&self, inner: &mut LogMgrInner) -> io::Result<()> {
-        self.file_mgr.write(&inner.current_blk, &inner.log_page)?;
+        self.storage_mgr.write(&inner.current_blk, &inner.log_page)?;
         inner.last_saved_lsn = inner.latest_lsn;
         Ok(())
     }
@@ -87,9 +87,9 @@ impl LogMgr {
         if (boundary - bytes_needed as i32) < std::mem::size_of::<i32>() as i32 {
             self.flush_internal(&mut inner)?;
             
-            inner.current_blk = Self::append_new_block(&*self.file_mgr, &self.log_file)?;
-            inner.log_page = Page::new(self.file_mgr.block_size());
-            inner.log_page.set_int(0, self.file_mgr.block_size() as i32);
+            inner.current_blk = Self::append_new_block(&*self.storage_mgr, &self.log_file)?;
+            inner.log_page = Page::new(self.storage_mgr.block_size());
+            inner.log_page.set_int(0, self.storage_mgr.block_size() as i32);
             let boundary = inner.log_page.get_int(0);
             let recpos = boundary - bytes_needed as i32;
             
@@ -114,13 +114,13 @@ impl LogMgr {
     pub fn iterator(&self) -> io::Result<LogIterator> {
         let mut inner = self.inner.lock().unwrap();
         self.flush_internal(&mut inner)?;
-        LogIterator::new(&self.file_mgr, inner.current_blk.clone())
+        LogIterator::new(&self.storage_mgr, inner.current_blk.clone())
     }
 }
 
 /// An iterator over log records, starting from the most recent and moving backwards.
 pub struct LogIterator<'a> {
-    file_mgr: &'a Arc<dyn FileMgr>,
+    storage_mgr: &'a Arc<dyn StorageMgr>,
     blk: BlockId,
     page: Page,
     current_pos: usize,
@@ -128,10 +128,10 @@ pub struct LogIterator<'a> {
 }
 
 impl<'a> LogIterator<'a> {
-    fn new(file_mgr: &'a Arc<dyn FileMgr>, blk: BlockId) -> io::Result<Self> {
-        let page = Page::new(file_mgr.block_size());
+    fn new(storage_mgr: &'a Arc<dyn StorageMgr>, blk: BlockId) -> io::Result<Self> {
+        let page = Page::new(storage_mgr.block_size());
         let mut iter = LogIterator {
-            file_mgr,
+            storage_mgr,
             blk: blk.clone(),
             page,
             current_pos: 0,
@@ -142,18 +142,18 @@ impl<'a> LogIterator<'a> {
     }
     
     fn move_to_block(&mut self, blk: &BlockId) -> io::Result<()> {
-        self.file_mgr.read(blk, &mut self.page)?;
+        self.storage_mgr.read(blk, &mut self.page)?;
         self.boundary = self.page.get_int(0) as usize;
         self.current_pos = self.boundary;
         Ok(())
     }
     
     pub fn has_next(&self) -> bool {
-        self.current_pos < self.file_mgr.block_size() || self.blk.number() > 0
+        self.current_pos < self.storage_mgr.block_size() || self.blk.number() > 0
     }
     
     pub fn next(&mut self) -> io::Result<Vec<u8>> {
-        if self.current_pos == self.file_mgr.block_size() {
+        if self.current_pos == self.storage_mgr.block_size() {
             let new_blk = BlockId::new(self.blk.file_name().to_string(), self.blk.number() - 1);
             self.blk = new_blk.clone();
             self.move_to_block(&new_blk)?;
@@ -179,7 +179,7 @@ impl Drop for LogMgr {
 
 #[cfg(test)]
 mod tests {
-    use crate::error::DbResult;
+    use crate::{error::DbResult, storage::FileMgr};
 
     use super::*;
     use std::sync::Arc;
@@ -187,7 +187,7 @@ mod tests {
 
     struct TestEnvironment {
         _temp_dir: TempDir,
-        file_mgr: Arc<dyn FileMgr>,
+        storage_mgr: Arc<dyn StorageMgr>,
         log_mgr: Arc<LogMgr>,
     }
 
@@ -198,12 +198,12 @@ mod tests {
 
         fn new_with_block_size(block_size: usize) -> DbResult<Self> {
             let temp_dir = TempDir::new().unwrap();
-            let file_mgr: Arc<dyn FileMgr> = Arc::new(BasicFileMgr::new(temp_dir.path(), block_size)?);
-            let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr) as Arc<dyn FileMgr>, "testlog")?);
+            let storage_mgr: Arc<dyn StorageMgr> = Arc::new(FileMgr::new(temp_dir.path(), block_size)?);
+            let log_mgr = Arc::new(LogMgr::new(Arc::clone(&storage_mgr) as Arc<dyn StorageMgr>, "testlog")?);
             
             Ok(TestEnvironment {
                 _temp_dir: temp_dir,
-                file_mgr,
+                storage_mgr,
                 log_mgr,
             })
         }
@@ -302,7 +302,7 @@ mod tests {
         
         // First session: create log manager and append records
         {
-            let log_mgr = LogMgr::new(Arc::clone(&env.file_mgr), "testlog")?;
+            let log_mgr = LogMgr::new(Arc::clone(&env.storage_mgr), "testlog")?;
             
             for rec in &records {
                 log_mgr.append(rec)?;
@@ -312,7 +312,7 @@ mod tests {
         
         // Second session: create a new log manager and read the records
         {
-            let log_mgr = LogMgr::new(Arc::clone(&env.file_mgr), "testlog")?;
+            let log_mgr = LogMgr::new(Arc::clone(&env.storage_mgr), "testlog")?;
             
             // Retrieve records using an iterator
             let mut iter: LogIterator<'_> = log_mgr.iterator()?;

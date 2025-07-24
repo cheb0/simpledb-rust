@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc, sync::{atomic::{AtomicI32, Ordering}, Arc}};
 
-use crate::{error::DbError, storage::{BlockId, FileMgr, BasicFileMgr}, tx::concurrency::{ConcurrencyMgr, LockTable}};
+use crate::{error::DbError, storage::{BlockId, StorageMgr}, tx::concurrency::{ConcurrencyMgr, LockTable}};
 use crate::buffer::{BufferMgr, BufferList};
 use crate::log::LogMgr;
 use crate::error::DbResult;
@@ -15,7 +15,7 @@ pub struct TransactionInner<'a> {
     buffer_mgr: &'a BufferMgr,
     concurrency_mgr: ConcurrencyMgr,
     log_mgr: Arc<LogMgr>,
-    file_mgr: Arc<dyn FileMgr>,
+    storage_mgr: Arc<dyn StorageMgr>,
     buffers: BufferList<'a>,
 }
 
@@ -25,7 +25,7 @@ pub struct Transaction<'a> {
 
 impl<'a> Transaction<'a> {
     pub fn new(
-        file_mgr: Arc<dyn FileMgr>,
+        storage_mgr: Arc<dyn StorageMgr>,
         log_mgr: Arc<LogMgr>,
         buffer_mgr: &'a BufferMgr,
         lock_table: Arc<LockTable>,
@@ -41,7 +41,7 @@ impl<'a> Transaction<'a> {
         let inner = TransactionInner {
             buffer_mgr,
             log_mgr,
-            file_mgr,
+            storage_mgr,
             id: tx_id,
             buffers,
             concurrency_mgr: ConcurrencyMgr::new(lock_table),
@@ -183,18 +183,18 @@ impl<'a> Transaction<'a> {
         let mut tx_inner = self.inner.borrow_mut();
         let dummy_blk = BlockId::new(file_name.to_string(), -1);
         tx_inner.concurrency_mgr.lock_shared(&dummy_blk)?;
-        Ok(tx_inner.file_mgr.block_cnt(file_name)?)
+        Ok(tx_inner.storage_mgr.block_cnt(file_name)?)
     }
 
     pub fn append(&self, file_name: &str) -> DbResult<BlockId> {
         let mut tx_inner = self.inner.borrow_mut();
         let dummy_blk = BlockId::new(file_name.to_string(), -1);
         tx_inner.concurrency_mgr.lock_exclusive(&dummy_blk)?;
-        Ok(tx_inner.file_mgr.append(file_name)?)
+        Ok(tx_inner.storage_mgr.append(file_name)?)
     }
 
     pub fn block_size(&self) -> usize {
-        self.inner.borrow().file_mgr.block_size()
+        self.inner.borrow().storage_mgr.block_size()
     }
 
     pub fn available_buffs(&self) -> usize {
@@ -214,13 +214,13 @@ impl<'a> Clone for Transaction<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::tx::concurrency::lock_table::LockTable;
+    use crate::{storage::FileMgr, tx::concurrency::lock_table::LockTable};
     use super::*;
     use tempfile::TempDir;
 
     struct TestEnvironment {
         _temp_dir: TempDir,
-        file_mgr: Arc<dyn FileMgr>,
+        storage_mgr: Arc<dyn StorageMgr>,
         log_mgr: Arc<LogMgr>,
         buffer_mgr: Arc<BufferMgr>,
         lock_table: Arc<LockTable>,
@@ -229,14 +229,14 @@ mod tests {
     impl TestEnvironment {
         fn new() -> DbResult<Self> {
             let temp_dir = TempDir::new().unwrap();
-            let file_mgr: Arc<dyn FileMgr> = Arc::new(BasicFileMgr::new(temp_dir.path(), 400)?);
-            let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), "testlog")?);
-            let buffer_mgr = Arc::new(BufferMgr::new(Arc::clone(&file_mgr), Arc::clone(&log_mgr), 3));
+            let storage_mgr: Arc<dyn StorageMgr> = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
+            let log_mgr = Arc::new(LogMgr::new(Arc::clone(&storage_mgr), "testlog")?);
+            let buffer_mgr = Arc::new(BufferMgr::new(Arc::clone(&storage_mgr), Arc::clone(&log_mgr), 3));
             let lock_table = Arc::new(LockTable::new());
             
             Ok(TestEnvironment {
                 _temp_dir: temp_dir,
-                file_mgr,
+                storage_mgr,
                 log_mgr,
                 buffer_mgr,
                 lock_table,
@@ -245,7 +245,7 @@ mod tests {
 
         fn new_transaction(&self) -> DbResult<Transaction<'_>> {
             Transaction::new(
-                Arc::clone(&self.file_mgr),
+                Arc::clone(&self.storage_mgr),
                 Arc::clone(&self.log_mgr),
                 &self.buffer_mgr,
                 Arc::clone(&self.lock_table)

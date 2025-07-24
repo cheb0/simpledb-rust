@@ -8,14 +8,14 @@ use crate::log::LogMgr;
 use crate::metadata::MetadataMgr;
 
 use crate::plan::Planner;
-use crate::storage::{FileMgr, BasicFileMgr};
+use crate::storage::{StorageMgr, FileMgr};
 use crate::tx::concurrency::LockTable;
 use crate::tx::Transaction;
 
 use super::Config;
 
 pub struct SimpleDB<'a> {
-    file_mgr: Arc<dyn FileMgr>,
+    storage_mgr: Arc<dyn StorageMgr>,
     log_mgr: Arc<LogMgr>,
     buffer_mgr: Arc<BufferMgr>,
     planner: Planner,
@@ -26,11 +26,11 @@ pub struct SimpleDB<'a> {
 
 impl<'a> SimpleDB<'a> {
     pub fn with_config(config: Config) -> DbResult<Self> {
-        let file_mgr: Arc<dyn FileMgr> = Arc::new(BasicFileMgr::new(&config.db_directory, config.block_size)?);
-        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&file_mgr), config.log_file_path().to_str().unwrap())?);
+        let storage_mgr: Arc<dyn StorageMgr> = Arc::new(FileMgr::new(&config.db_directory, config.block_size)?);
+        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&storage_mgr), config.log_file_path().to_str().unwrap())?);
         
         let buffer_mgr = Arc::new(BufferMgr::new(
-            Arc::clone(&file_mgr),
+            Arc::clone(&storage_mgr),
             Arc::clone(&log_mgr),
             config.buffer_capacity,
         ));
@@ -38,18 +38,18 @@ impl<'a> SimpleDB<'a> {
 
         // TODO recover if is_new
         let tx = Transaction::new(
-            Arc::clone(&file_mgr),
+            Arc::clone(&storage_mgr),
             Arc::clone(&log_mgr),
             &buffer_mgr,
             Arc::clone(&lock_table),
         )?;
         
-        let md_mgr = Arc::new(MetadataMgr::new(file_mgr.is_new(), tx.clone())?);
+        let md_mgr = Arc::new(MetadataMgr::new(storage_mgr.is_new(), tx.clone())?);
         let planner = Planner::new(Arc::clone(&md_mgr));
         tx.commit()?;
     
         Ok(Self {
-            file_mgr,
+            storage_mgr,
             log_mgr,
             buffer_mgr: Arc::clone(&buffer_mgr),
             metadata_mgr: md_mgr,
@@ -65,7 +65,7 @@ impl<'a> SimpleDB<'a> {
 
     pub fn load_metadata(&mut self) -> DbResult<()> {
         let tx = Transaction::new(
-            Arc::clone(&self.file_mgr),
+            Arc::clone(&self.storage_mgr),
             Arc::clone(&self.log_mgr),
             &self.buffer_mgr,
             Arc::clone(&self.lock_table),
@@ -80,15 +80,15 @@ impl<'a> SimpleDB<'a> {
 
     pub fn new_tx(&'a self) -> DbResult<Transaction<'a>> {
         Transaction::new(
-            Arc::clone(&self.file_mgr),
+            Arc::clone(&self.storage_mgr),
             Arc::clone(&self.log_mgr),
             &self.buffer_mgr,
             Arc::clone(&self.lock_table),
         )
     }
 
-    pub fn file_mgr(&self) -> Arc<dyn FileMgr> {
-        Arc::clone(&self.file_mgr)
+    pub fn storage_mgr(&self) -> Arc<dyn StorageMgr> {
+        Arc::clone(&self.storage_mgr)
     }
 
     pub fn buffer_mgr(&'a self) -> &'a BufferMgr {
