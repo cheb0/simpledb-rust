@@ -1,12 +1,12 @@
 use std::path::{Path, PathBuf};
 
 /// Configuration for file-based storage manager
-pub struct FileMgrConfig {
+pub struct FileStorageMgrConfig {
     pub db_directory: PathBuf,
     pub block_size: usize,
 }
 
-impl FileMgrConfig {
+impl FileStorageMgrConfig {
     pub fn new<P: AsRef<Path>>(db_directory: P) -> Self {
         Self {
             db_directory: db_directory.as_ref().to_path_buf(),
@@ -40,13 +40,13 @@ impl MemStorageMgrConfig {
 
 /// Configuration for different storage manager types
 pub enum StorageMgrConfig {
-    File(FileMgrConfig),
+    File(FileStorageMgrConfig),
     Mem(MemStorageMgrConfig),
 }
 
 impl StorageMgrConfig {
     pub fn file<P: AsRef<Path>>(db_directory: P) -> Self {
-        StorageMgrConfig::File(FileMgrConfig::new(db_directory))
+        StorageMgrConfig::File(FileStorageMgrConfig::new(db_directory))
     }
 
     pub fn mem() -> Self {

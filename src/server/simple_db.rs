@@ -8,7 +8,7 @@ use crate::log::LogMgr;
 use crate::metadata::MetadataMgr;
 
 use crate::plan::Planner;
-use crate::storage::{StorageMgr, FileMgr, MemStorageMgr};
+use crate::storage::{StorageMgr, FileStorageMgr, MemStorageMgr};
 use crate::tx::concurrency::LockTable;
 use crate::tx::Transaction;
 
@@ -28,7 +28,7 @@ impl<'a> SimpleDB<'a> {
     pub fn with_config(config: Config) -> DbResult<Self> {
         let storage_mgr: Arc<dyn StorageMgr> = match &config.storage_mgr {
             crate::server::config::StorageMgrConfig::File(file_config) => {
-                Arc::new(FileMgr::new(&file_config.db_directory, file_config.block_size)?)
+                Arc::new(FileStorageMgr::new(&file_config.db_directory, file_config.block_size)?)
             },
             crate::server::config::StorageMgrConfig::Mem(mem_config) => {
                 Arc::new(MemStorageMgr::new(mem_config.block_size))

@@ -179,7 +179,7 @@ impl Drop for LogMgr {
 
 #[cfg(test)]
 mod tests {
-    use crate::{error::DbResult, storage::FileMgr};
+    use crate::{error::DbResult, storage::FileStorageMgr};
 
     use super::*;
     use std::sync::Arc;
@@ -198,7 +198,7 @@ mod tests {
 
         fn new_with_block_size(block_size: usize) -> DbResult<Self> {
             let temp_dir = TempDir::new().unwrap();
-            let storage_mgr: Arc<dyn StorageMgr> = Arc::new(FileMgr::new(temp_dir.path(), block_size)?);
+            let storage_mgr: Arc<dyn StorageMgr> = Arc::new(FileStorageMgr::new(temp_dir.path(), block_size)?);
             let log_mgr = Arc::new(LogMgr::new(Arc::clone(&storage_mgr) as Arc<dyn StorageMgr>, "testlog")?);
             
             Ok(TestEnvironment {

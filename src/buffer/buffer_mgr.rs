@@ -170,7 +170,7 @@ mod tests {
     use std::thread;
     use std::sync::{Arc, Barrier};
     use crate::storage::StorageMgr;
-    use crate::storage::FileMgr;
+    use crate::storage::FileStorageMgr;
     use crate::log::LogMgr;
     use tempfile::TempDir;
 
@@ -183,7 +183,7 @@ mod tests {
     impl TestEnvironment {
         fn new(buffer_count: usize) -> DbResult<Self> {
             let temp_dir = TempDir::new().unwrap();
-            let storage_mgr: Arc<dyn StorageMgr> = Arc::new(FileMgr::new(temp_dir.path().to_path_buf(), 400)?);
+            let storage_mgr: Arc<dyn StorageMgr> = Arc::new(FileStorageMgr::new(temp_dir.path().to_path_buf(), 400)?);
             let log_mgr = Arc::new(LogMgr::new(Arc::clone(&storage_mgr), "testlog")?);
             let buffer_mgr = Arc::new(BufferMgr::new(Arc::clone(&storage_mgr), Arc::clone(&log_mgr), buffer_count));
             

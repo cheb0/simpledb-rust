@@ -214,7 +214,7 @@ impl<'a> Clone for Transaction<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{storage::FileMgr, tx::concurrency::lock_table::LockTable};
+    use crate::{storage::FileStorageMgr, tx::concurrency::lock_table::LockTable};
     use super::*;
     use tempfile::TempDir;
 
@@ -229,7 +229,7 @@ mod tests {
     impl TestEnvironment {
         fn new() -> DbResult<Self> {
             let temp_dir = TempDir::new().unwrap();
-            let storage_mgr: Arc<dyn StorageMgr> = Arc::new(FileMgr::new(temp_dir.path(), 400)?);
+            let storage_mgr: Arc<dyn StorageMgr> = Arc::new(FileStorageMgr::new(temp_dir.path(), 400)?);
             let log_mgr = Arc::new(LogMgr::new(Arc::clone(&storage_mgr), "testlog")?);
             let buffer_mgr = Arc::new(BufferMgr::new(Arc::clone(&storage_mgr), Arc::clone(&log_mgr), 3));
             let lock_table = Arc::new(LockTable::new());

@@ -35,15 +35,15 @@ pub trait StorageMgr: Send + Sync {
     fn block_size(&self) -> usize;
 }
 
-/// Basic implementation of FileMgr that uses the file system.
-pub struct FileMgr {
+/// Basic implementation of FileStorageMgr that uses the file system.
+pub struct FileStorageMgr {
     db_directory: PathBuf,
     block_size: usize,
     is_new: bool,
     open_files: Mutex<HashMap<String, File>>,
 }
 
-impl FileMgr {
+impl FileStorageMgr {
     pub fn new<P: AsRef<Path>>(db_directory: P, block_size: usize) -> DbResult<Self> {
         let db_path = db_directory.as_ref().to_path_buf();
         let is_new = !db_path.exists();
@@ -63,7 +63,7 @@ impl FileMgr {
             }
         }
 
-        Ok(FileMgr {
+        Ok(FileStorageMgr {
             db_directory: db_path,
             block_size,
             is_new,
@@ -110,7 +110,7 @@ impl FileMgr {
     }
 }
 
-impl StorageMgr for FileMgr {
+impl StorageMgr for FileStorageMgr {
     fn read(&self, blk: &BlockId, page: &mut Page) -> io::Result<()> {
         let mut file = self.get_file(&blk.file_name())?;
         let pos = blk.number() as u64 * self.block_size as u64;
@@ -260,7 +260,7 @@ mod tests {
     #[test]
     fn test_append_and_length() {
         let temp_dir = tempdir().unwrap();
-        let storage_mgr = FileMgr::new(temp_dir.path(), 400).unwrap();
+        let storage_mgr = FileStorageMgr::new(temp_dir.path(), 400).unwrap();
         
         let filename = "testfile";
         let blk1 = storage_mgr.append(filename).unwrap();
@@ -277,7 +277,7 @@ mod tests {
     #[test]
     fn test_read_write() {
         let temp_dir = tempdir().unwrap();
-        let storage_mgr = FileMgr::new(temp_dir.path(), 400).unwrap();
+        let storage_mgr = FileStorageMgr::new(temp_dir.path(), 400).unwrap();
         
         let filename = "testfile";
         let blk = storage_mgr.append(filename).unwrap();
@@ -298,7 +298,7 @@ mod tests {
     #[test]
     fn test_read_write_multiple_pages() {
         let temp_dir = tempdir().unwrap();
-        let storage_mgr = FileMgr::new(temp_dir.path(), 400).unwrap();
+        let storage_mgr = FileStorageMgr::new(temp_dir.path(), 400).unwrap();
 
         let file_name = "testfile";
         let blk1 = storage_mgr.append(file_name).unwrap();
@@ -332,7 +332,7 @@ mod tests {
     #[test]
     fn test_storage_mgr_trait() {
         let temp_dir = tempdir().unwrap();
-        let storage_mgr: Box<dyn StorageMgr> = Box::new(FileMgr::new(temp_dir.path(), 400).unwrap());
+        let storage_mgr: Box<dyn StorageMgr> = Box::new(FileStorageMgr::new(temp_dir.path(), 400).unwrap());
         
         let filename = "testfile";
         let blk = storage_mgr.append(filename).unwrap();
