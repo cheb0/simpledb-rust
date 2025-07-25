@@ -4,8 +4,6 @@ use std::time::{Duration, Instant};
 use rand::Rng;
 use tempfile::TempDir;
 
-use std::sync::Arc;
-
 const FILE_NAME: &str = "benchmark.dat";
 const NUM_BLOCKS: usize = 100;
 const NUM_TRANSACTIONS: usize = 50000;
