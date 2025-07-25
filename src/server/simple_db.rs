@@ -99,20 +99,12 @@ impl<'a> SimpleDB<'a> {
         )
     }
 
-    pub fn storage_mgr(&self) -> Arc<dyn StorageMgr> {
-        Arc::clone(&self.storage_mgr)
-    }
-
     pub fn buffer_mgr(&'a self) -> &'a BufferMgr {
         &self.buffer_mgr
     }
 
-    pub fn log_mgr(&self) -> Arc<LogMgr> {
-        Arc::clone(&self.log_mgr)
-    }
-
-    pub fn metadata_mgr(&self) -> Arc<MetadataMgr> {
-        self.metadata_mgr.clone()
+    pub fn metadata_mgr(&self) -> &MetadataMgr {
+        &self.metadata_mgr
     }
 
     pub fn planner(&self) -> &Planner {
