@@ -9,13 +9,13 @@ use super::recovery::{commit_record::CommitRecord, log_record::{create_log_recor
 
 static NEXT_TX_ID: AtomicI32 = AtomicI32::new(0);
 
-// Transaction is alive as long as DB is alive, so we can reference BufferMgr and other types.
+// Transaction is alive as long as DB is alive, so we can reference BufferMgr, StorageMgr, LogMgr.
 pub struct TransactionInner<'a> {
     id: i32,
     buffer_mgr: &'a BufferMgr,
     concurrency_mgr: ConcurrencyMgr,
-    log_mgr: Arc<LogMgr>,
-    storage_mgr: Arc<dyn StorageMgr>,
+    log_mgr: &'a LogMgr,
+    storage_mgr: &'a dyn StorageMgr,
     buffers: BufferList<'a>,
 }
 
@@ -25,8 +25,8 @@ pub struct Transaction<'a> {
 
 impl<'a> Transaction<'a> {
     pub fn new(
-        storage_mgr: Arc<dyn StorageMgr>,
-        log_mgr: Arc<LogMgr>,
+        storage_mgr: &'a dyn StorageMgr,
+        log_mgr: &'a LogMgr,
         buffer_mgr: &'a BufferMgr,
         lock_table: Arc<LockTable>,
     ) -> DbResult<Self> {
@@ -86,12 +86,11 @@ impl<'a> Transaction<'a> {
     }
 
     fn do_rollback(&self) -> DbResult<()> {
-        let inner = self.inner.borrow();
-        let log_mgr = Arc::clone(&inner.log_mgr); // TODO
-        let tx_id = inner.id;
-        drop(inner);
+        let tx_inner = self.inner.borrow();
+        let tx_id = tx_inner.id;
         
-        let mut iter = log_mgr.iterator()?;
+        let mut iter = tx_inner.log_mgr.iterator()?;
+        drop(tx_inner);
         
         while iter.has_next() {
             let bytes = iter.next()?;
@@ -245,8 +244,8 @@ mod tests {
 
         fn new_transaction(&self) -> DbResult<Transaction<'_>> {
             Transaction::new(
-                Arc::clone(&self.storage_mgr),
-                Arc::clone(&self.log_mgr),
+                &*self.storage_mgr,
+                &self.log_mgr,
                 &self.buffer_mgr,
                 Arc::clone(&self.lock_table)
             )

@@ -7,8 +7,7 @@ pub struct MetadataMgr {
 }
 
 impl MetadataMgr {
-    pub fn new(is_new: bool, tx: Transaction) -> DbResult<Self> {
-        let table_mgr = TableMgr::new(is_new, tx)?;
+    pub fn new(table_mgr: TableMgr) -> DbResult<Self> {
         Ok(Self { table_mgr })
     }
 
@@ -31,7 +30,7 @@ mod tests {
         let db = temp_db()?;
         let tx = db.new_tx()?;
         
-        let md_mgr = MetadataMgr::new(true, tx.clone())?;
+        let md_mgr = MetadataMgr::new(TableMgr::new(true, tx.clone())?)?;
         
         let mut test_schema = Schema::new();
         test_schema.add_int_field("id");

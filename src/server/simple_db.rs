@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use crate::buffer::BufferMgr;
 use crate::error::DbResult;
 use crate::log::LogMgr;
-use crate::metadata::MetadataMgr;
+use crate::metadata::{MetadataMgr, TableMgr};
 
 use crate::plan::Planner;
 use crate::storage::{StorageMgr, FileStorageMgr, MemStorageMgr};
@@ -18,8 +18,8 @@ pub struct SimpleDB<'a> {
     storage_mgr: Arc<dyn StorageMgr>,
     log_mgr: Arc<LogMgr>,
     buffer_mgr: Arc<BufferMgr>,
-    planner: Planner,
-    metadata_mgr: Arc<MetadataMgr>,
+    planner: Option<Planner>,
+    metadata_mgr: Option<Arc<MetadataMgr>>,
     lock_table: Arc<LockTable>,
     _phantom: PhantomData<&'a ()>,
 }
@@ -36,6 +36,7 @@ impl<'a> SimpleDB<'a> {
         };
         
         let log_mgr = Arc::new(LogMgr::new(Arc::clone(&storage_mgr), config.log_file_path().to_str().unwrap())?);
+        let is_new_db = storage_mgr.is_new();
         
         let buffer_mgr = Arc::new(BufferMgr::new(
             Arc::clone(&storage_mgr),
@@ -45,26 +46,28 @@ impl<'a> SimpleDB<'a> {
         let lock_table = Arc::new(LockTable::new());
 
         // TODO recover if is_new
-        let tx = Transaction::new(
-            Arc::clone(&storage_mgr),
-            Arc::clone(&log_mgr),
-            &buffer_mgr,
-            Arc::clone(&lock_table),
-        )?;
-        
-        let md_mgr = Arc::new(MetadataMgr::new(storage_mgr.is_new(), tx.clone())?);
-        let planner = Planner::new(Arc::clone(&md_mgr));
-        tx.commit()?;
-    
-        Ok(Self {
+        let mut db = Self {
             storage_mgr,
             log_mgr,
             buffer_mgr: Arc::clone(&buffer_mgr),
-            metadata_mgr: md_mgr,
-            planner: planner,
+            metadata_mgr: None,
+            planner: None,
             lock_table,
             _phantom: PhantomData,
-        })
+        };
+
+        let tx = db.new_tx()?;
+        let table_mgr = TableMgr::new(is_new_db, tx.clone())?;
+        tx.commit()?;
+        drop(tx);
+
+        let metadata_mgr = Arc::new(MetadataMgr::new(table_mgr)?);
+        let planner = Planner::new(Arc::clone(&metadata_mgr));
+
+        db.metadata_mgr = Some(metadata_mgr);
+        db.planner = Some(planner);
+        
+        Ok(db)
     }
 
     pub fn new<P: AsRef<Path>>(db_directory: P) -> DbResult<Self> {
@@ -74,11 +77,11 @@ impl<'a> SimpleDB<'a> {
     pub fn new_mem() -> DbResult<Self> {
         Self::with_config(Config::mem())
     }
-
+/* 
     pub fn load_metadata(&mut self) -> DbResult<()> {
         let tx = Transaction::new(
-            Arc::clone(&self.storage_mgr),
-            Arc::clone(&self.log_mgr),
+            &*self.storage_mgr,
+            &self.log_mgr,
             &self.buffer_mgr,
             Arc::clone(&self.lock_table),
         )?;
@@ -88,12 +91,12 @@ impl<'a> SimpleDB<'a> {
         
         self.metadata_mgr = Arc::new(md_mgr);
         Ok(())
-    }
+    } */
 
     pub fn new_tx(&'a self) -> DbResult<Transaction<'a>> {
         Transaction::new(
-            Arc::clone(&self.storage_mgr),
-            Arc::clone(&self.log_mgr),
+            &*self.storage_mgr,
+            &self.log_mgr,
             &self.buffer_mgr,
             Arc::clone(&self.lock_table),
         )
@@ -104,11 +107,12 @@ impl<'a> SimpleDB<'a> {
     }
 
     pub fn metadata_mgr(&self) -> &MetadataMgr {
-        &self.metadata_mgr
+        &*self.metadata_mgr.as_ref().unwrap()
     }
 
     pub fn planner(&self) -> &Planner {
-        &self.planner
+        // planner must be initialized
+        self.planner.as_ref().unwrap()
     }
 }
 
