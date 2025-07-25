@@ -164,6 +164,94 @@ impl StorageMgr for FileMgr {
     }
 }
 
+/// In-memory implementation of StorageMgr for testing and temporary storage.
+pub struct MemStorageMgr {
+    block_size: usize,
+    files: Mutex<HashMap<String, Vec<Vec<u8>>>>,
+}
+
+impl MemStorageMgr {
+    pub fn new(block_size: usize) -> Self {
+        MemStorageMgr {
+            block_size,
+            files: Mutex::new(HashMap::new()),
+        }
+    }
+}
+
+impl StorageMgr for MemStorageMgr {
+    fn read(&self, blk: &BlockId, page: &mut Page) -> io::Result<()> {
+        let files = self.files.lock().unwrap();
+        let blocks = files.get(blk.file_name())
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "File not found"))?;
+        
+        let block_num = blk.number() as usize;
+        if block_num >= blocks.len() {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "Block number out of range"));
+        }
+        
+        let block_data = &blocks[block_num];
+        let buffer = page.contents_mut();
+        
+        let block_size = block_data.len();
+        // Copy data from memory block to page buffer
+        if block_size != buffer.len() {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "Page size and block size do not match"));
+        }
+        buffer[..block_size].copy_from_slice(&block_data[..block_size]);
+        Ok(())
+    }
+
+    fn write(&self, blk: &BlockId, page: &Page) -> io::Result<()> {
+        let mut files = self.files.lock().unwrap();
+        let blocks = files.get_mut(blk.file_name())
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "File not found"))?;
+        
+        let block_num = blk.number() as usize;
+        
+        if block_num >= blocks.len() {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "Block number out of range"));
+        }
+        
+        // Copy data from page buffer to memory block
+        let block = &mut blocks[block_num];
+        let page_data = page.contents();
+        let block_size = block.len();
+        if block_size != page_data.len() {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "Page size and block size do not match"));
+        }
+        block[..block_size].copy_from_slice(&page_data[..block_size]);
+        
+        Ok(())
+    }
+
+    fn append(&self, filename: &str) -> io::Result<BlockId> {
+        let mut files = self.files.lock().unwrap();
+        let blocks = files.entry(filename.to_string()).or_insert_with(Vec::new);
+        
+        let new_block_num = blocks.len() as i32;
+        let new_block = vec![0; self.block_size];
+        blocks.push(new_block);
+        
+        Ok(BlockId::new(filename.to_string(), new_block_num))
+    }
+
+    fn block_cnt(&self, filename: &str) -> io::Result<i32> {
+        let files = self.files.lock().unwrap();
+        let file_blocks = files.get(filename);
+        Ok(file_blocks.map(|blocks| blocks.len() as i32).unwrap_or(0))
+    }
+
+    fn is_new(&self) -> bool {
+        // Memory storage is always "new" since it starts empty
+        true
+    }
+
+    fn block_size(&self) -> usize {
+        self.block_size
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -260,5 +348,94 @@ mod tests {
         
         assert_eq!(page2.get_int(0), 123);
         assert_eq!(page2.get_string(4), "Trait test");
+    }
+
+    #[test]
+    fn test_mem_storage_mgr_basic() {
+        let storage_mgr = MemStorageMgr::new(400);
+        
+        let filename = "testfile";
+        let blk1 = storage_mgr.append(filename).unwrap();
+        let blk2 = storage_mgr.append(filename).unwrap();
+        let blk3 = storage_mgr.append(filename).unwrap();
+        
+        assert_eq!(blk1.number(), 0);
+        assert_eq!(blk2.number(), 1);
+        assert_eq!(blk3.number(), 2);
+        
+        assert_eq!(storage_mgr.block_cnt(filename).unwrap(), 3);
+    }
+
+    #[test]
+    fn test_mem_storage_mgr_read_write() {
+        let storage_mgr = MemStorageMgr::new(400);
+        
+        let filename = "testfile";
+        let blk = storage_mgr.append(filename).unwrap();
+        
+        let mut page = Page::new(400);
+        page.set_int(0, 42);
+        page.set_string(4, "Hello, Memory!");
+        
+        storage_mgr.write(&blk, &page).unwrap();
+        
+        let mut page2 = Page::new(400);
+        storage_mgr.read(&blk, &mut page2).unwrap();
+        
+        assert_eq!(page2.get_int(0), 42);
+        assert_eq!(page2.get_string(4), "Hello, Memory!");
+    }
+
+    #[test]
+    fn test_mem_storage_mgr_multiple_files() {
+        let storage_mgr = MemStorageMgr::new(400);
+        
+        // Create two different files
+        let file1 = "file1";
+        let file2 = "file2";
+        
+        let blk1 = storage_mgr.append(file1).unwrap();
+        let blk2 = storage_mgr.append(file2).unwrap();
+        
+        let mut page1 = Page::new(400);
+        page1.set_int(0, 100);
+        
+        let mut page2 = Page::new(400);
+        page2.set_int(0, 200);
+        
+        storage_mgr.write(&blk1, &page1).unwrap();
+        storage_mgr.write(&blk2, &page2).unwrap();
+        
+        let mut read_page1 = Page::new(400);
+        let mut read_page2 = Page::new(400);
+        
+        storage_mgr.read(&blk1, &mut read_page1).unwrap();
+        storage_mgr.read(&blk2, &mut read_page2).unwrap();
+        
+        assert_eq!(read_page1.get_int(0), 100);
+        assert_eq!(read_page2.get_int(0), 200);
+        
+        assert_eq!(storage_mgr.block_cnt(file1).unwrap(), 1);
+        assert_eq!(storage_mgr.block_cnt(file2).unwrap(), 1);
+    }
+
+    #[test]
+    fn test_mem_storage_mgr_trait_object() {
+        let storage_mgr: Box<dyn StorageMgr> = Box::new(MemStorageMgr::new(400));
+        
+        let filename = "testfile";
+        let blk = storage_mgr.append(filename).unwrap();
+        
+        let mut page = Page::new(400);
+        page.set_int(0, 123);
+        page.set_string(4, "Memory trait test");
+        
+        storage_mgr.write(&blk, &page).unwrap();
+        
+        let mut page2 = Page::new(400);
+        storage_mgr.read(&blk, &mut page2).unwrap();
+        
+        assert_eq!(page2.get_int(0), 123);
+        assert_eq!(page2.get_string(4), "Memory trait test");
     }
 }

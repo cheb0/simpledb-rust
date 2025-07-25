@@ -8,7 +8,7 @@ use crate::log::LogMgr;
 use crate::metadata::MetadataMgr;
 
 use crate::plan::Planner;
-use crate::storage::{StorageMgr, FileMgr};
+use crate::storage::{StorageMgr, FileMgr, MemStorageMgr};
 use crate::tx::concurrency::LockTable;
 use crate::tx::Transaction;
 
@@ -26,7 +26,15 @@ pub struct SimpleDB<'a> {
 
 impl<'a> SimpleDB<'a> {
     pub fn with_config(config: Config) -> DbResult<Self> {
-        let storage_mgr: Arc<dyn StorageMgr> = Arc::new(FileMgr::new(&config.db_directory, config.block_size)?);
+        let storage_mgr: Arc<dyn StorageMgr> = match &config.storage_mgr {
+            crate::server::config::StorageMgrConfig::File(file_config) => {
+                Arc::new(FileMgr::new(&file_config.db_directory, file_config.block_size)?)
+            },
+            crate::server::config::StorageMgrConfig::Mem(mem_config) => {
+                Arc::new(MemStorageMgr::new(mem_config.block_size))
+            },
+        };
+        
         let log_mgr = Arc::new(LogMgr::new(Arc::clone(&storage_mgr), config.log_file_path().to_str().unwrap())?);
         
         let buffer_mgr = Arc::new(BufferMgr::new(
@@ -60,7 +68,11 @@ impl<'a> SimpleDB<'a> {
     }
 
     pub fn new<P: AsRef<Path>>(db_directory: P) -> DbResult<Self> {
-        Self::with_config(Config::new(db_directory))
+        Self::with_config(Config::file(db_directory))
+    }
+
+    pub fn new_mem() -> DbResult<Self> {
+        Self::with_config(Config::mem())
     }
 
     pub fn load_metadata(&mut self) -> DbResult<()> {
@@ -111,7 +123,7 @@ impl<'a> SimpleDB<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::record::Schema;
+    use crate::{record::Schema, server::config::StorageMgrConfig};
     use tempfile::TempDir;
 
     #[test]
@@ -119,7 +131,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         
         let db = SimpleDB::with_config(
-            Config::new(temp_dir.path())
+            Config::new(StorageMgrConfig::file(temp_dir.path()))
                 .block_size(400)
                 .buffer_capacity(5)
                 .log_file("testlog")

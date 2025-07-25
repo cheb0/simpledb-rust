@@ -1,8 +1,7 @@
 use std::{ops::Deref};
-
 use tempfile::TempDir;
 
-use crate::{server::Config, DbResult, SimpleDB};
+use crate::{server::{config::StorageMgrConfig, Config}, DbResult, SimpleDB};
 
 const TEST_PAGE_SIZE: usize = 400;
 
@@ -35,7 +34,7 @@ pub fn temp_db<'a>() -> DbResult<TempSimpleDB<'a>> {
 
 pub fn temp_db_with_cfg<'a>(mut cfg_updater: impl FnMut(Config) -> Config) -> DbResult<TempSimpleDB<'a>> {
     let temp_dir = TempDir::new().unwrap();
-    let mut cfg = Config::new(temp_dir.path());
+    let mut cfg = Config::new(StorageMgrConfig::file(temp_dir.path()));
     cfg = cfg.block_size(TEST_PAGE_SIZE);
     cfg = cfg_updater(cfg);
 
