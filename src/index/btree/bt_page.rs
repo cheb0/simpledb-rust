@@ -11,8 +11,8 @@ const ID_FIELD: &str = "id";
 
 /// B-tree directory and leaf pages have many commonalities:
 /// in particular, their records are stored in sorted order, 
-/// and pages split when full.
-/// A BTPage object contains this common functionality.
+/// and pages split when full. A BTPage object contains this 
+/// common functionality.
 pub struct BTPage<'a> {
     tx: Transaction<'a>,
     current_blk: BlockId,
@@ -41,20 +41,16 @@ impl<'a> BTPage<'a> {
     }
 
     /// Return the dataval of the record at the specified slot.
-    /// @param slot the integer slot of an index record
-    /// @return the dataval of the record at that slot
     pub fn get_data_val(&self, slot: usize) -> DbResult<Constant> {
         self.get_val(slot, DATAVAL_FIELD)
     }
     
     /// Return the value of the page's flag field
-    /// @return the value of the page's flag field
     pub fn get_flag(&self) -> DbResult<i32> {
         self.tx.get_int(&self.current_blk, 0)
     }
     
     /// Set the page's flag field to the specified value
-    /// @param val the new value of the page flag
     pub fn set_flag(&self, val: i32) -> DbResult<()> {
         self.tx.set_int(&self.current_blk, 0, val, true)
     }
@@ -69,8 +65,6 @@ impl<'a> BTPage<'a> {
     
     /// Append a new block to the end of the specified B-tree file,
     /// having the specified flag value.
-    /// @param flag the initial value of the flag
-    /// @return a reference to the newly-created block
     pub fn append_new(&self, flag: i32) -> DbResult<BlockId> {
         let blk = self.tx.append(&self.current_blk.file_name())?;
         self.tx.pin(&blk)?;
@@ -130,18 +124,12 @@ impl<'a> BTPage<'a> {
         Ok(slot as i32 - 1)
     }
 
-    /// Return the block number stored in the index record
-    /// at the specified slot.
-    /// @param slot the slot of an index record
-    /// @return the block number stored in that record
+    /// Return the block number stored in the index record at the specified slot.
     pub fn get_child_cnt(&self, slot: usize) -> DbResult<i32> {
         self.get_int(slot, BLOCK_FIELD)
     }
 
     /// Insert a directory entry at the specified slot.
-    /// @param slot the slot of an index record
-    /// @param val the dataval to be stored
-    /// @param blknum the block number to be stored
     pub fn insert_dir(&self, slot: usize, val: &Constant, blk_num: i32) -> DbResult<()> {
         self.insert(slot)?;
         self.set_val(slot, DATAVAL_FIELD, val)?;
@@ -149,10 +137,7 @@ impl<'a> BTPage<'a> {
         Ok(())
     }
 
-    // Methods called only by BTreeLeaf
     /// Return the dataRID value stored in the specified leaf index record.
-    /// @param slot the slot of the desired index record
-    /// @return the dataRID value store at that slot
     pub fn get_data_rid(&self, slot: usize) -> DbResult<RID> {
         let block_num = self.get_int(slot, BLOCK_FIELD)?;
         let id = self.get_int(slot, ID_FIELD)?;
@@ -160,9 +145,6 @@ impl<'a> BTPage<'a> {
     }
 
     /// Insert a leaf index record at the specified slot.
-    /// @param slot the slot of the desired index record
-    /// @param val the new dataval
-    /// @param rid the new dataRID
     pub fn insert_leaf(&self, slot: usize, val: &Constant, rid: &RID) -> DbResult<()> {
         self.insert(slot)?;
         self.set_val(slot, DATAVAL_FIELD, val)?;
@@ -172,7 +154,6 @@ impl<'a> BTPage<'a> {
     }
 
     /// Delete the index record at the specified slot.
-    /// @param slot the slot of the deleted index record
     pub fn delete(&self, slot: usize) -> DbResult<()> {
         let records_cnt = self.records_cnt()?;
         for i in (slot + 1)..records_cnt {
@@ -187,6 +168,16 @@ impl<'a> BTPage<'a> {
     pub fn records_cnt(&self) -> DbResult<usize> {
         let cnt = self.tx.get_int(&self.current_blk, std::mem::size_of::<i32>())?;
         Ok(cnt as usize)
+    }
+
+    /// Check if the page is full (adding one more record would exceed block size).
+    /// @return true if the page is full, false otherwise
+    pub fn is_full(&self) -> DbResult<bool> {
+        let current_records = self.records_cnt()?;
+        let next_slot_pos = self.slot_pos(current_records + 1);
+        let block_size = self.tx.block_size();
+        
+        Ok(next_slot_pos >= block_size)
     }
 
     // TODO this is very inefficient, should just memcpy recs

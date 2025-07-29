@@ -7,5 +7,6 @@ pub mod rid;
 pub use rid::RID;
 pub use schema::Schema;
 pub use layout::Layout;
+pub use schema::FieldType;
 pub use record_page::RecordPage;
 pub use table_scan::TableScan;
