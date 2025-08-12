@@ -1,7 +1,6 @@
 #[cfg(test)]
 mod tests {
     use simpledb::{SimpleDB, DbResult};
-    use simpledb::record::{TableScan, Layout};
     use tempfile::TempDir;
 
     #[test]
@@ -153,7 +152,7 @@ mod tests {
             
             assert_eq!(records.len(), 3, "Should have exactly 3 records");
             
-            for (id, _name, age) in &records {
+            for (_id, _name, age) in &records {
                 assert_eq!(*age, 40, "All ages should be 40 after bulk update");
             }
             

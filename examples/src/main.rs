@@ -1,6 +1,6 @@
 use simpledb::{storage::BlockId, tx::Transaction, DbResult, SimpleDB};
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use rand::Rng;
 use tempfile::TempDir;
 
@@ -91,27 +91,27 @@ fn prepare_database(db: &mut SimpleDB) -> DbResult<()> {
 }
 
 fn execute_random_operations_in_tx(db: &mut SimpleDB) -> DbResult<()> {
-    let mut rng = rand::thread_rng();
-    let mut tx = db.new_tx()?;
+    let mut rng = rand::rng();
+    let tx = db.new_tx()?;
 
     for _ in 0..OPERATIONS_PER_TX {
-        let block_num = rng.gen_range(0..NUM_BLOCKS) as i32;
+        let block_num = rng.random_range(0..NUM_BLOCKS) as i32;
         let blk = BlockId::new(FILE_NAME.to_string(), block_num);
         
         tx.pin(&blk)?;
 
-        if rng.gen_bool(0.5) {
-            let field_num = rng.gen_range(0..INT_FIELDS_PER_BLOCK);
+        if rng.random_bool(0.5) {
+            let field_num = rng.random_range(0..INT_FIELDS_PER_BLOCK);
             let offset = field_num * 4;
             let value = rng.random::<i32>();
             tx.set_int(&blk, offset, value, true)?;
         } else {
-            let field_num = rng.gen_range(0..STRING_FIELDS_PER_BLOCK);
+            let field_num = rng.random_range(0..STRING_FIELDS_PER_BLOCK);
             let string_offset = INT_FIELDS_PER_BLOCK * 4;
             let offset = string_offset + field_num * (STRING_LENGTH + 4);
             
-            let value: String = (0..rng.gen_range(5..STRING_LENGTH))
-                .map(|_| rng.gen_range(b'a'..=b'z') as char)
+            let value: String = (0..rng.random_range(5..STRING_LENGTH))
+                .map(|_| rng.random_range(b'a'..=b'z') as char)
                 .collect();
                 
             tx.set_string(&blk, offset, &value, true)?;
