@@ -1,7 +1,14 @@
 use crate::{metadata::IndexInfo, query::Constant, record::{schema::FieldType, Layout, RID}, storage::BlockId, tx::Transaction, DbResult};
 
+// Original implementation - https://github.com/redixhumayun/simpledb/blob/master/src/btree.rs
+
+pub struct InternalNodeEntry {
+    pub dataval: Constant,
+    pub block_num: usize,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum PageType {
+pub enum PageType {
     Internal(Option<usize>),
     Leaf(Option<usize>),
 }
@@ -40,8 +47,7 @@ impl From<PageType> for i32 {
     }
 }
 
-
-struct BTreePage<'tx> {
+pub struct BTreePage<'tx> {
     tx: Transaction<'tx>,
     block_id: BlockId,
     layout: Layout,
@@ -55,7 +61,7 @@ impl<'tx> BTreePage<'tx> {
     // const BLOCK_NUM_COLUMN: &'static str = "block";
     // const SLOT_NUM_COLUMN: &'static str = "id";
 
-    fn new(tx: Transaction<'tx>, block_id: BlockId, layout: Layout) -> DbResult<Self> {
+    pub fn new(tx: Transaction<'tx>, block_id: BlockId, layout: Layout) -> DbResult<Self> {
         tx.pin(&block_id)?;
         Ok(Self {
             tx,
@@ -68,7 +74,7 @@ impl<'tx> BTreePage<'tx> {
     /// the specified search key should be, then returns the position before it.
     /// Returns None if the search key belongs at the start of the page
     /// Returns Some(pos) where pos is the index of the rightmost record less than search_key
-    fn find_slot_before(&self, search_key: &Constant) -> DbResult<Option<usize>> {
+    pub fn find_slot_before(&self, search_key: &Constant) -> DbResult<Option<usize>> {
         let mut current_slot = 0;
         while current_slot < self.get_number_of_recs()?
             && self.get_data_value(current_slot)? < *search_key
@@ -84,13 +90,13 @@ impl<'tx> BTreePage<'tx> {
 
     /// Returns true if adding two more records would exceed the block size
     /// Used primarily for testing to detect splits before they occur
-    fn is_one_off_full(&self) -> DbResult<bool> {
+    pub fn is_one_off_full(&self) -> DbResult<bool> {
         let current_records = self.get_number_of_recs()?;
         Ok(self.slot_pos(current_records + 2) > self.tx.block_size())
     }
 
     /// Returns true if adding one more record would exceed the block size
-    fn is_full(&self) -> DbResult<bool> {
+    pub fn is_full(&self) -> DbResult<bool> {
         let current_records = self.get_number_of_recs()?;
         Ok(self.slot_pos(current_records + 1) > self.tx.block_size())
     }
@@ -98,7 +104,7 @@ impl<'tx> BTreePage<'tx> {
     /// This method splits the existing [BTreePage] and moves the records from [slot..]
     /// into a new page and then returns the [BlockId] of the new page
     /// The current page continues to be the same, but with fewer records
-    fn split(&self, slot: usize, page_type: PageType) -> DbResult<BlockId> { 
+    pub fn split(&self, slot: usize, page_type: PageType) -> DbResult<BlockId> { 
         let block_id = self.tx.append(&self.block_id.file_name())?;
         let new_btree_page =
             BTreePage::new(self.tx.clone(), block_id.clone(), self.layout.clone())?;
@@ -123,7 +129,7 @@ impl<'tx> BTreePage<'tx> {
 
     /// Formats a new page by initializing its flag and record count
     /// Sets all record slots to their zero values based on field types
-    fn format(&self, page_type: PageType) -> DbResult<()> {
+    pub fn format(&self, page_type: PageType) -> DbResult<()> {
         self.tx
             .set_int(&self.block_id, 0, page_type.into(), true)?;
         self.tx.set_int(&self.block_id, Self::INT_BYTES, 0, true)?;
@@ -145,17 +151,17 @@ impl<'tx> BTreePage<'tx> {
     }
 
     /// Retrieves the page type flag from the header
-    fn get_flag(&self) -> DbResult<PageType> {
+    pub fn get_flag(&self) -> DbResult<PageType> {
         self.tx.get_int(&self.block_id, 0).map(PageType::from)
     }
 
     /// Updates the page type flag in the header
-    fn set_flag(&self, value: PageType) -> DbResult<()> {
+    pub fn set_flag(&self, value: PageType) -> DbResult<()> {
         self.tx.set_int(&self.block_id, 0, value.into(), true)
     }
 
     /// Gets the data value at the specified slot
-    fn get_data_value(&self, slot: usize) -> DbResult<Constant> {
+    pub fn get_data_value(&self, slot: usize) -> DbResult<Constant> {
         let value = self.get_value(slot, IndexInfo::DATA_FIELD)?;
         Ok(value)
     }
@@ -167,7 +173,7 @@ impl<'tx> BTreePage<'tx> {
     }
 
     /// Gets the RID stored at the specified slot (for leaf nodes)
-    fn get_rid(&self, slot: usize) -> DbResult<RID> {
+    pub fn get_rid(&self, slot: usize) -> DbResult<RID> {
         let block_num = self.get_int(slot, IndexInfo::BLOCK_NUM_FIELD)?;
         let slot_num = self.get_int(slot, IndexInfo::ID_FIELD)? as usize;
         Ok(RID::new(block_num, slot_num))
@@ -189,7 +195,7 @@ impl<'tx> BTreePage<'tx> {
 
     /// Inserts a leaf entry at the specified slot
     /// Leaf entries contain a data value and RID pointing to the actual record
-    fn insert_leaf(&self, slot: usize, value: Constant, rid: RID) -> DbResult<()> {
+    pub fn insert_leaf(&self, slot: usize, value: Constant, rid: RID) -> DbResult<()> {
         self.insert(slot)?;
         self.set_value(slot, IndexInfo::DATA_FIELD, value)?;
         self.set_int(slot, IndexInfo::BLOCK_NUM_FIELD, rid.block_number() as i32)?;
@@ -211,7 +217,7 @@ impl<'tx> BTreePage<'tx> {
 
     /// Deletes the record at the specified slot
     /// Shifts all following records left by one position
-    fn delete(&self, slot: usize) -> DbResult<()> {
+    pub fn delete(&self, slot: usize) -> DbResult<()> {
         let current_records = self.get_number_of_recs()?;
         for i in slot + 1..current_records {
             self.copy_record(i, i - 1)?;
@@ -229,7 +235,7 @@ impl<'tx> BTreePage<'tx> {
     }
 
     /// Gets the number of records currently stored in the page
-    fn get_number_of_recs(&self) -> DbResult<usize> {
+    pub fn get_number_of_recs(&self) -> DbResult<usize> {
         self.tx
             .get_int(&self.block_id, Self::INT_BYTES)
             .map(|v| v as usize)
