@@ -7,3 +7,7 @@
 ### Other Rust SimpleDB ports
 * [redixhumayun/simpledb](https://github.com/redixhumayun/simpledb) - took B+Tree and some other stuff from this one
 * [mnogu/simpledb-rs](https://github.com/mnogu/simpledb-rs)
+
+### Other databases
+* [bustub](https://github.com/cmu-db/bustub)
+* [turso](https://github.com/tursodatabase/turso)
