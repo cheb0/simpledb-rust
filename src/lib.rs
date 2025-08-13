@@ -1,5 +1,6 @@
 pub mod buffer;
 pub mod metadata;
+pub mod index;
 pub mod error;
 pub mod log;
 pub mod query;

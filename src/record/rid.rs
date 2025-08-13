@@ -1,3 +1,4 @@
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct RID {
     block_number: i32,
     slot: usize,

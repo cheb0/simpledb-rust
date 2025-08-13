@@ -2,8 +2,18 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FieldType {
-    Integer,
-    Varchar,
+    Integer = 0,
+    Varchar = 1,
+}
+
+impl From<i32> for FieldType {
+    fn from(value: i32) -> Self {
+        match value {
+            0 => FieldType::Integer,
+            1 => FieldType::Varchar,
+            _ => panic!("Invalid field type"),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
