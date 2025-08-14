@@ -167,7 +167,7 @@ impl<'tx> BTreePage<'tx> {
     }
 
     /// Gets the child block number at the specified slot (for internal nodes)
-    fn get_child_block_num(&self, slot: usize) -> DbResult<usize> {
+    pub fn get_child_block_num(&self, slot: usize) -> DbResult<usize> {
         let block_num = self.get_int(slot, IndexInfo::BLOCK_NUM_FIELD)? as usize;
         Ok(block_num)
     }
@@ -181,7 +181,7 @@ impl<'tx> BTreePage<'tx> {
 
     /// Inserts a directory entry at the specified slot (for internal nodes)
     /// Directory entries contain a data value and child block number
-    fn insert_internal(
+    pub fn insert_internal(
         &self,
         slot: usize,
         value: Constant,
