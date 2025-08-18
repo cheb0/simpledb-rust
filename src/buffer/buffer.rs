@@ -52,6 +52,10 @@ impl Buffer {
         self.tx_id
     }
 
+    pub fn is_modified_by_tx(&self) -> bool {
+        self.tx_id >= 0
+    }
+
     /// Assigns this buffer to the specified block.
     /// If the buffer was previously assigned to a block,
     /// that block is written to disk.

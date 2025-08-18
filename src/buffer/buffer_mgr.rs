@@ -86,6 +86,7 @@ impl BufferMgr {
         }
         
         if let Some(idx) = pinned_buff_id {
+
             Ok(PinnedBufferGuard {
                 buffer_mgr: self,
                 buffer: &self.buffers[idx],
@@ -114,6 +115,9 @@ impl BufferMgr {
             inner.available_cnt -= 1;
             
             let mut buffer = self.buffers[idx].borrow_mut();
+            if let Some(block) = buffer.block() {
+                inner.block_to_buffer_idx.remove(&block);
+            }
             buffer.assign_to_block(blk.clone())?;
             
             return Ok(Some(idx));
@@ -134,14 +138,11 @@ impl BufferMgr {
     
     fn unpin_internal(&self, idx: usize) {
         let mut inner = self.inner.lock().unwrap();
-        let buffer = self.buffers[idx].borrow_mut();
+        let _ = self.buffers[idx].borrow_mut();
         
         inner.pins[idx] -= 1;
 
         if inner.pins[idx] == 0 {
-            if let Some(block) = buffer.block() {
-                inner.block_to_buffer_idx.remove(&block);
-            }
             inner.available_cnt += 1;
             self.condvar.notify_all();
         }
@@ -225,6 +226,36 @@ mod tests {
             let buffer = pinned_guard.borrow();
             assert_eq!(buffer.page().get_int(0), 123);
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_choose_same_buffer_if_not_flushed() -> DbResult<()> {
+        let env = TestEnvironment::new(3)?;
+        let blocks_cnt = 3;
+        for _ in 0..blocks_cnt {
+            env.storage_mgr.append("testfile")?;
+        }
+
+        let blk0 = BlockId::new("testfile".to_string(), 0);
+        let blk1 = BlockId::new("testfile".to_string(), 1);
+        let blk2 = BlockId::new("testfile".to_string(), 1);
+
+        let grd0 = env.buffer_mgr.pin(&blk0)?;
+        let grd1 = env.buffer_mgr.pin(&blk1)?;
+        let grd2 = env.buffer_mgr.pin(&blk2)?;
+        let buf_idx2= grd2.idx;
+
+        drop(grd0);
+        drop(grd1);
+
+        drop(grd2);
+
+        let grd3 = env.buffer_mgr.pin(&blk2)?;
+        let buf_idx3 = grd3.idx;
+
+        assert_eq!(buf_idx2, buf_idx3);
 
         Ok(())
     }
