@@ -180,8 +180,9 @@ impl<'tx> Index for BTreeIndex<'tx> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{HashMap, HashSet};
+    use rand::{seq::SliceRandom, Rng};
     use crate::{utils::testing_utils::{temp_db, temp_db_with_cfg}, SimpleDB};
-
     use super::*;
 
     fn create_test_layout() -> Layout {
@@ -271,7 +272,6 @@ mod tests {
         let db = temp_db()?;
         let mut index = setup_index(&db)?;
 
-        // Insert and then delete a value
         index.insert(&Constant::Int(10), &RID::new(1, 1))?;
         index.delete(&Constant::Int(10), &RID::new(1, 1))?;
 
@@ -279,12 +279,10 @@ mod tests {
         index.before_first(&Constant::Int(10))?;
         assert!(!index.next()?);
 
-        // Insert multiple values and delete one
         index.insert(&Constant::Int(20), &RID::new(1, 1))?;
         index.insert(&Constant::Int(20), &RID::new(1, 2))?;
         index.delete(&Constant::Int(20), &RID::new(1, 1))?;
 
-        // Verify only one remains
         index.before_first(&Constant::Int(20))?;
         assert!(index.next()?);
         assert_eq!(index.get_data_rid()?, RID::new(1, 2));
@@ -308,6 +306,145 @@ mod tests {
             assert!(index.next()?);
             assert_eq!(index.get_data_rid()?, RID::new(1, i as usize));
         }
+        Ok(())
+    }
+
+    #[test]
+    fn test_index_10k_randomized_keys() -> DbResult<()> {
+        let db = temp_db_with_cfg(|cfg| cfg.block_size(200))?;
+        let mut index = setup_index(&db)?;
+
+        const NUM_KEYS: usize = 10000;
+        let mut keys: Vec<i32> = (0..NUM_KEYS as i32).collect();
+        let mut rng = rand::rng();
+        keys.shuffle(&mut rng);
+
+        for (i, &key) in keys.iter().enumerate() {
+            let rid = RID::new((i / 100) as i32, i % 100);
+            index.insert(&Constant::Int(key), &rid)?;
+        }
+
+        let mut missing_keys = Vec::new();
+
+        for (i, &key) in keys.iter().enumerate() {
+            index.before_first(&Constant::Int(key))?;
+            
+            if index.next()? {
+                let rid = index.get_data_rid()?;
+                
+                let expected_rid = RID::new((i / 100) as i32, i % 100);
+                assert_eq!(rid, expected_rid, "RID mismatch for key {}", key);
+            } else {
+                missing_keys.push(key);
+            }
+        }
+
+        if !missing_keys.is_empty() {
+            println!("Missing keys: {:?}", &missing_keys[..std::cmp::min(50, missing_keys.len())]);
+            if missing_keys.len() > 50 {
+                println!("... and {} more", missing_keys.len() - 50);
+            }
+        }
+        assert!(missing_keys.is_empty(), "No keys should be missing");
+
+        let non_existent_keys = vec![
+            -1, -100, -1000,
+            NUM_KEYS as i32, (NUM_KEYS + 100) as i32, (NUM_KEYS + 1000) as i32,
+        ];
+        for &key in &non_existent_keys {
+            index.before_first(&Constant::Int(key))?;
+            assert!(!index.next()?, "Key {} should not exist in the index", key);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_index_10k_randomized_keys_with_delete() -> DbResult<()> {
+        let db = temp_db_with_cfg(|cfg| cfg.block_size(200))?;
+        let mut index = setup_index(&db)?;
+
+        const NUM_KEYS: usize = 10000;
+        let mut keys: Vec<i32> = (0..NUM_KEYS as i32).collect();
+        let mut keys_to_delete = HashSet::new();
+        let mut key_to_rid = HashMap::new();
+        let mut rng = rand::rng();
+        keys.shuffle(&mut rng);
+
+        for (i, &key) in keys.iter().enumerate() {
+            let rid = RID::new((i / 100) as i32, i % 100);
+            index.insert(&Constant::Int(key), &rid)?;
+            key_to_rid.insert(key, rid);
+
+            // delete 10% of keys
+            if rng.random_range(0..10) == 0 {
+                keys_to_delete.insert(key);
+            }
+        }
+
+        for (i, &key) in keys.iter().enumerate() {
+            index.before_first(&Constant::Int(key))?;
+            
+            if index.next()? {
+                let rid = index.get_data_rid()?;
+                
+                let expected_rid = RID::new((i / 100) as i32, i % 100);
+                assert_eq!(rid, expected_rid, "RID mismatch for key {}", key);
+            } else {
+                assert!(false, "Key {} not found", key);
+            }
+        }
+
+        for &key in keys_to_delete.iter() {
+            let rid = key_to_rid[&key];
+            index.delete(&Constant::Int(key), &rid).unwrap();
+        }
+
+        for (i, &key) in keys.iter().enumerate() {
+            index.before_first(&Constant::Int(key))?;
+            
+            if keys_to_delete.contains(&key) {
+                assert!(!index.next().unwrap(), "Should never find a deleted entry");
+            } else {
+                if index.next()? {
+                    let rid = index.get_data_rid()?;
+                    let expected_rid = RID::new((i / 100) as i32, i % 100);
+                    assert_eq!(rid, expected_rid, "RID mismatch for key {}", key);
+                } else {
+                    assert!(false, "Key {} not found", key);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_index_sequential_access() -> DbResult<()> {
+        let db = temp_db_with_cfg(|cfg| cfg.block_size(200))?;
+        let mut index = setup_index(&db)?;
+
+        const NUM_KEYS: usize = 10000;
+        for i in 0..NUM_KEYS {
+            let key = i as i32;
+            let rid = RID::new((i / 100) as i32, i % 100);
+            index.insert(&Constant::Int(key), &rid)?;
+        }
+
+        let mut found_count = 0;
+        for i in 0..NUM_KEYS {
+            let key = i as i32;
+            index.before_first(&Constant::Int(key))?;
+            
+            if index.next()? {
+                let rid = index.get_data_rid()?;
+                let expected_rid = RID::new((i / 100) as i32, i % 100);
+                assert_eq!(rid, expected_rid, "RID mismatch for sequential key {}", key);
+                found_count += 1;
+            }
+        }
+
+        assert_eq!(found_count, NUM_KEYS, "All sequential keys should be found");
         Ok(())
     }
 }

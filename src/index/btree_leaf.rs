@@ -71,7 +71,7 @@ impl<'tx> BTreeLeaf<'tx> {
                 return Ok(());
             }
         }
-        return Err(crate::DbError::LockAbort); // TODO not found
+        return Err(crate::DbError::NotFound);
     }
 
     /// This method will attempt to insert an entry into a [BTreeLeaf] page

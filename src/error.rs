@@ -31,6 +31,9 @@ pub enum DbError {
 
     #[error("Lock abort")]
     LockAbort,
+
+    #[error("Not found")]
+    NotFound,
 }
 
 impl From<bincode::Error> for DbError {
