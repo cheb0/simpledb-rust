@@ -15,21 +15,20 @@ pub enum PageType {
 
 impl From<i32> for PageType {
     fn from(value: i32) -> Self {
-        const TYPE_MASK: i32 = 1 << 31;
-        const VALUE_MASK: i32 = !(1 << 31);
-        let is_internal = value & TYPE_MASK == 0;
-        if is_internal {
+        if value >= 0 {
+            // Positive values: Internal pages
             if value == 0 {
-                return PageType::Internal(None);
+                PageType::Internal(None)
             } else {
-                return PageType::Internal(Some((value & VALUE_MASK) as usize));
+                PageType::Internal(Some((value - 1) as usize))
             }
         } else {
-            let val = value & VALUE_MASK;
-            if val == 0 {
-                return PageType::Leaf(None);
+            // Negative values: Leaf pages
+            let abs_val = (-value) as usize;
+            if abs_val == 1 {
+                PageType::Leaf(None)
             } else {
-                return PageType::Leaf(Some(val as usize));
+                PageType::Leaf(Some((abs_val - 2) as usize))
             }
         }
     }
@@ -37,12 +36,11 @@ impl From<i32> for PageType {
 
 impl From<PageType> for i32 {
     fn from(value: PageType) -> Self {
-        const TYPE_MASK: i32 = 1 << 31;
         match value {
             PageType::Internal(None) => 0,
-            PageType::Internal(Some(n)) => n as i32,
-            PageType::Leaf(None) => TYPE_MASK,
-            PageType::Leaf(Some(n)) => TYPE_MASK | (n as i32),
+            PageType::Internal(Some(n)) => (n + 1) as i32,
+            PageType::Leaf(None) => -1,
+            PageType::Leaf(Some(n)) => -((n + 2) as i32),
         }
     }
 }
@@ -130,8 +128,7 @@ impl<'tx> BTreePage<'tx> {
     /// Formats a new page by initializing its flag and record count
     /// Sets all record slots to their zero values based on field types
     pub fn format(&self, page_type: PageType) -> DbResult<()> {
-        self.tx
-            .set_int(&self.block_id, 0, page_type.into(), true)?;
+        self.tx.set_int(&self.block_id, 0, page_type.into(), true)?;
         self.tx.set_int(&self.block_id, Self::INT_BYTES, 0, true)?;
         let record_size = self.layout.slot_size();
         for i in ((2 * Self::INT_BYTES)..self.tx.block_size()).step_by(record_size) {
@@ -336,6 +333,10 @@ impl<'tx> BTreePage<'tx> {
         Self::INT_BYTES + Self::INT_BYTES + slot * self.layout.slot_size()
     }
 
+    pub fn block_id(&self) -> &BlockId {
+        &self.block_id
+    }
+
     /// Unpins the page's block from the buffer manager
     fn close(&self) {
         self.tx.unpin(&self.block_id);
@@ -350,8 +351,6 @@ impl Drop for BTreePage<'_> {
 
 impl std::fmt::Display for BTreePage<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "\n=== BTreePage Debug ===")?;
-        writeln!(f, "Block: {:?}", self.block_id)?;
         match self.get_flag() {
             Ok(flag) => writeln!(f, "Page Type: {:?}", flag)?,
             Err(e) => writeln!(f, "Error getting flag: {}", e)?,
@@ -360,7 +359,6 @@ impl std::fmt::Display for BTreePage<'_> {
         match self.get_number_of_recs() {
             Ok(count) => {
                 writeln!(f, "Record Count: {}", count)?;
-                writeln!(f, "Entries:")?;
                 match self.get_flag() {
                     Ok(PageType::Internal(_)) => {
                         for slot in 0..count {
@@ -389,12 +387,12 @@ impl std::fmt::Display for BTreePage<'_> {
             }
             Err(e) => writeln!(f, "Error getting record count: {}", e)?,
         }
-        writeln!(f, "====================")
+        Ok(())
     }
 }
 
 #[cfg(test)]
-mod btree_page_tests {
+mod tests {
     use crate::{record::Schema, utils::testing_utils::temp_db};
 
     use super::*;

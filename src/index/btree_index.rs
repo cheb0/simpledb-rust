@@ -1,7 +1,9 @@
 use crate::{index::{btree_internal::BTreeInternal, btree_leaf::BTreeLeaf, btree_page::PageType, BTreePage, Index}, metadata::IndexInfo, query::Constant, record::{schema::FieldType, Layout, Schema, RID}, storage::BlockId, tx::Transaction, DbResult};
+use std::fmt;
 
 // Original implementation - https://github.com/redixhumayun/simpledb/blob/master/src/btree.rs
 
+/// A B-tree implementation of the Index interface/
 pub struct BTreeIndex<'tx> {
     txn: Transaction<'tx>,
     index_name: String,
@@ -31,10 +33,12 @@ impl<'tx> BTreeIndex<'tx> {
         internal_schema.add_from_schema(IndexInfo::BLOCK_NUM_FIELD, leaf_layout.schema());
         internal_schema.add_from_schema(IndexInfo::DATA_FIELD, leaf_layout.schema());
         let internal_layout = Layout::new(internal_schema.clone());
+        
         if txn.size(&internal_table_name)? == 0 {
             let block_id = txn.append(&internal_table_name)?;
             let internal_page = BTreePage::new(txn.clone(), block_id, internal_layout.clone())?;
             internal_page.format(PageType::Internal(None))?;
+            
             //  insert initial entry
             let field_type = internal_schema.field_type(IndexInfo::DATA_FIELD).unwrap();
             let min_val = match field_type {
@@ -58,6 +62,42 @@ impl<'tx> BTreeIndex<'tx> {
         (1 + num_of_blocks.ilog(records_per_block))
             .try_into()
             .unwrap()
+    }
+}
+
+impl<'tx> fmt::Display for BTreeIndex<'tx> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "\n=== BTreeIndex: {} ===", self.index_name)?;
+        writeln!(f, "Root block: {:?}", self.root_block)?;
+        writeln!(f, "Leaf table: {}", self.leaf_table_name)?;
+        
+        let tx = self.txn.clone();
+        let internal_cnt = tx.size(&self.root_block.file_name()).unwrap();
+
+        for i in 0..internal_cnt {
+            let page = BTreeInternal::new(
+                tx.clone(), 
+                BlockId::new(self.root_block.file_name().to_string(), i), 
+                self.internal_layout.clone(), 
+                self.root_block.file_name().to_string()
+            ).unwrap();
+            writeln!(f, "{}", page)?;
+        }
+
+        let leaf_cnt = tx.size(&self.leaf_table_name).unwrap();
+
+        for i in 0..leaf_cnt {
+            let page = BTreeLeaf::new(
+                tx.clone(),
+                BlockId::new(self.leaf_table_name.clone(), i),
+                self.leaf_layout.clone(),
+                Constant::Int(-1),
+                self.leaf_table_name.to_string()
+            ).unwrap();
+            writeln!(f, "{}", page)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -115,7 +155,7 @@ impl<'tx> Index for BTreeIndex<'tx> {
             self.internal_layout.clone(),
             self.root_block.file_name().to_string(),
         )?;
-        let root_split_entry = root.insert_entry(int_node_id)?;
+        let root_split_entry = root.insert(int_node_id)?;
         if root_split_entry.is_none() {
             return Ok(());
         }
@@ -140,7 +180,7 @@ impl<'tx> Index for BTreeIndex<'tx> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{utils::testing_utils::temp_db, SimpleDB};
+    use crate::{utils::testing_utils::{temp_db, temp_db_with_cfg}, SimpleDB};
 
     use super::*;
 
@@ -181,21 +221,24 @@ mod tests {
 
     #[test]
     fn test_simple_insert_and_search() -> DbResult<()> {
-        let db = temp_db()?;
+        let db = temp_db_with_cfg(|cfg| cfg.block_size(50))?;
         let mut index = setup_index(&db)?;
 
-        index.insert(&Constant::Int(10), &RID::new(1, 1))?;
-        index.insert(&Constant::Int(20), &RID::new(1, 2))?;
-        index.insert(&Constant::Int(30), &RID::new(1, 3))?;
+        index.insert(&Constant::Int(0), &RID::new(1, 1))?;
+        index.insert(&Constant::Int(1), &RID::new(1, 2))?;
+        index.insert(&Constant::Int(2), &RID::new(1, 3))?;
 
-        // Search for inserted values
-        index.before_first(&Constant::Int(20))?;
+        index.before_first(&Constant::Int(0))?;
+        assert!(index.next()?);
+        assert_eq!(index.get_data_rid()?, RID::new(1, 1));
+
+        index.before_first(&Constant::Int(1))?;
         assert!(index.next()?);
         assert_eq!(index.get_data_rid()?, RID::new(1, 2));
 
-        index.before_first(&Constant::Int(10))?;
+        index.before_first(&Constant::Int(2))?;
         assert!(index.next()?);
-        assert_eq!(index.get_data_rid()?, RID::new(1, 1));
+        assert_eq!(index.get_data_rid()?, RID::new(1, 3));
         Ok(())
     }
 
@@ -204,7 +247,6 @@ mod tests {
         let db = temp_db()?;
         let mut index = setup_index(&db)?;
 
-        // Insert duplicate keys
         index.insert(&Constant::Int(10), &RID::new(1, 1))?;
         index.insert(&Constant::Int(10), &RID::new(1, 2))?;
         index.insert(&Constant::Int(10), &RID::new(1, 3))?;

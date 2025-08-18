@@ -13,10 +13,9 @@ pub struct BTreeLeaf<'tx> {
 
 impl std::fmt::Display for BTreeLeaf<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "\n=== BTreeLeaf Debug ===")?;
+        writeln!(f, "\n============= LEAF {:?} ===", self.contents.block_id())?;
         writeln!(f, "Search Key: {:?}", self.search_key)?;
         writeln!(f, "Current Slot: {:?}", self.current_slot)?;
-        writeln!(f, "File Name: {}", self.file_name)?;
         writeln!(f, "\nContents:")?;
         write!(f, "{}", self.contents)?;
         Ok(())

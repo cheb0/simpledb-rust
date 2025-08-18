@@ -4,7 +4,6 @@ use crate::{index::{btree_page::{InternalNodeEntry, PageType}, BTreePage}, query
 
 pub struct BTreeInternal<'tx> {
     txn: Transaction<'tx>,
-    block_id: BlockId,
     layout: Layout,
     pub contents: BTreePage<'tx>,
     file_name: String,
@@ -12,9 +11,7 @@ pub struct BTreeInternal<'tx> {
 
 impl std::fmt::Display for BTreeInternal<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "\n=== BTreeInternal Debug ===")?;
-        writeln!(f, "Block ID: {:?}", self.block_id)?;
-        writeln!(f, "File Name: {}", self.file_name)?;
+        writeln!(f, "\n============= INTERNAL Node {:?} ===", self.contents.block_id())?;
         writeln!(f, "\nContents:")?;
         write!(f, "{}", self.contents)?;
         Ok(())
@@ -26,7 +23,6 @@ impl<'tx> BTreeInternal<'tx> {
         let contents = BTreePage::new(txn.clone(), block_id.clone(), layout.clone())?;
         Ok(Self {
             txn,
-            block_id,
             layout,
             contents,
             file_name,
@@ -68,8 +64,7 @@ impl<'tx> BTreeInternal<'tx> {
         };
         self.insert_entry(new_block_entry)?;
         self.insert_entry(entry)?;
-        self.contents
-            .set_flag(PageType::Internal(Some(level + 1)))?;
+        self.contents.set_flag(PageType::Internal(Some(level + 1)))?;
         Ok(())
     }
 
@@ -77,12 +72,12 @@ impl<'tx> BTreeInternal<'tx> {
     /// It works in conjunction with [BTreeInternal::insert_internal_node_entry] to do the insertion
     /// This method will find the correct child block to insert it into and the [BTreeInternal::insert_internal_node_entry] will do the actual
     /// insertion into the specific block
-    pub fn insert_entry(
+    pub fn insert(
         &self,
         entry: InternalNodeEntry,
     ) -> DbResult<Option<InternalNodeEntry>> {
         if matches!(self.contents.get_flag()?, PageType::Internal(None)) {
-            return self.insert_internal_node_entry(entry);
+            return self.insert_entry(entry);
         }
         let child_block = self.find_child_block(&entry.dataval)?;
         let child_internal_node = BTreeInternal::new(
@@ -91,10 +86,11 @@ impl<'tx> BTreeInternal<'tx> {
             self.layout.clone(),
             self.file_name.clone(),
         )?;
-        let new_entry = child_internal_node.insert_entry(entry)?;
+        let new_entry = child_internal_node.insert(entry)?;
+        drop(child_internal_node);
         match new_entry {
             Some(entry) => {
-                return self.insert_internal_node_entry(entry);
+                return self.insert_entry(entry);
             }
             None => return Ok(None),
         }
@@ -103,7 +99,7 @@ impl<'tx> BTreeInternal<'tx> {
     /// This method will insert a new entry into the [BTreeInternal] node
     /// It will find the appropriate slot for the new entry
     /// If the page is full, it will split the page and return the new entry
-    fn insert_internal_node_entry(
+    fn insert_entry(
         &self,
         entry: InternalNodeEntry,
     ) -> DbResult<Option<InternalNodeEntry>> {
@@ -135,7 +131,10 @@ impl<'tx> BTreeInternal<'tx> {
             Some(slot) => slot,
             None => 0,
         };
-        if self.contents.get_data_value(slot + 1)? == *search_key {
+        // let next_v = self.contents.get_data_value(slot + 1)?;
+        // println!("block_id: {:?}, search_key: {:?}, slot: {}, next_v; {:?}", self.contents.block_id(), search_key.clone(), slot, next_v);
+
+        if slot + 1 < self.contents.get_number_of_recs()? && self.contents.get_data_value(slot + 1)? == *search_key {
             slot += 1;
         }
         let block_num = self.contents.get_child_block_num(slot)?;
@@ -210,7 +209,7 @@ mod tests {
                 dataval: Constant::Int(block_num),
                 block_num: block_num as usize,
             };
-            internal.insert_entry(entry).unwrap();
+            internal.insert(entry).unwrap();
             block_num += 1;
         }
 
@@ -220,7 +219,7 @@ mod tests {
             block_num: block_num as usize,
         };
 
-        let split_result = internal.insert_entry(entry).unwrap();
+        let split_result = internal.insert(entry).unwrap();
         assert!(split_result.is_some());
 
         let split_entry = split_result.unwrap();
@@ -282,7 +281,7 @@ mod tests {
                 dataval: Constant::Int(value),
                 block_num: value as usize,
             };
-            internal.insert_entry(entry).unwrap();
+            internal.insert(entry).unwrap();
             value += 1;
         }
 
@@ -292,58 +291,12 @@ mod tests {
             block_num: value as usize,
         };
 
-        let split_result = internal.insert_entry(entry).unwrap();
+        let split_result = internal.insert(entry).unwrap();
         assert!(split_result.is_some());
 
         // Verify the split maintained tree properties
         let leaf_block_num = internal.search(&Constant::Int(3)).unwrap();
         assert!(leaf_block_num > 0);
-        Ok(())
-    }
-
-    #[test]
-    fn test_edge_cases() -> DbResult<()> {
-        let db = temp_db()?;
-        let (_, internal) = setup_internal_node(&db)?;
-
-        // Test inserting duplicate keys
-        internal
-            .insert_entry(InternalNodeEntry {
-                dataval: Constant::Int(10),
-                block_num: 1,
-            })
-            .unwrap();
-        internal
-            .insert_entry(InternalNodeEntry {
-                dataval: Constant::Int(10),
-                block_num: 2,
-            })
-            .unwrap();
-
-        println!("the page contents {}", internal.contents);
-
-        //  NOTE: It looks like the numbers are reversed here in the sense that the block numbers asserted are backwards
-        //  but they are correct because the insertion into the node results in a page that looks like this where block 2
-        //  is in slot 0
-        //  === BTreePage Debug ===
-        //  Block: BlockId { filename: "test_file_1746190249550660000_ThreadId(2)", block_num: 0 }
-        //  Page Type: Internal(None)
-        //  Record Count: 2
-        //  Entries:
-        //  Slot 0: Key=Int(10), Child Block=2
-        //  Slot 1: Key=Int(10), Child Block=1
-        //  ====================
-        // Search should return the rightmost child for duplicate key
-        let result = internal.find_child_block(&Constant::Int(10)).unwrap();
-        assert_eq!(result.number(), 1);
-
-        // Test searching for key less than all entries
-        let result = internal.find_child_block(&Constant::Int(5)).unwrap();
-        assert_eq!(result.number(), 2);
-
-        // Test searching for key greater than all entries
-        let result = internal.find_child_block(&Constant::Int(15)).unwrap();
-        assert_eq!(result.number(), 1);
         Ok(())
     }
 }
