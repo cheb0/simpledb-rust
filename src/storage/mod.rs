@@ -46,9 +46,15 @@ pub struct FileStorageMgr {
 impl FileStorageMgr {
     pub fn new<P: AsRef<Path>>(db_directory: P, block_size: usize) -> DbResult<Self> {
         let db_path = db_directory.as_ref().to_path_buf();
-        let is_new = !db_path.exists();
+        
+        let is_new = if db_path.exists() {
+            let mut entries = fs::read_dir(&db_path)?;
+            entries.next().is_none()
+        } else {
+            true
+        };
 
-        if is_new {
+        if !db_path.exists() {
             fs::create_dir_all(&db_path)?;
         }
 
@@ -243,7 +249,6 @@ impl StorageMgr for MemStorageMgr {
     }
 
     fn is_new(&self) -> bool {
-        // Memory storage is always "new" since it starts empty
         true
     }
 
@@ -437,5 +442,33 @@ mod tests {
         
         assert_eq!(page2.get_int(0), 123);
         assert_eq!(page2.get_string(4), "Memory trait test");
+    }
+
+    #[test]
+    fn test_file_storage_mgr_new_database_detection() -> DbResult<()> {
+        use tempfile::TempDir;
+        
+        let temp_dir = TempDir::new()?;
+        let non_existent_path = temp_dir.path().join("non_existent_db");
+        
+        let storage_mgr = FileStorageMgr::new(&non_existent_path, 400)?;
+        assert!(storage_mgr.is_new(), "Non-existent directory should be detected as new database");
+        
+        let empty_db_path = temp_dir.path().join("empty_db");
+        fs::create_dir_all(&empty_db_path)?;
+        
+        let storage_mgr = FileStorageMgr::new(&empty_db_path, 400)?;
+        assert!(storage_mgr.is_new(), "Empty directory should be detected as new database");
+        
+        let existing_db_path = temp_dir.path().join("existing_db");
+        fs::create_dir_all(&existing_db_path)?;
+        
+        let dummy_file = existing_db_path.join("dummy.txt");
+        fs::write(&dummy_file, "dummy content")?;
+        
+        let storage_mgr = FileStorageMgr::new(&existing_db_path, 400)?;
+        assert!(!storage_mgr.is_new(), "Directory with files should NOT be detected as new database");
+        
+        Ok(())
     }
 }

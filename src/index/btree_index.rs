@@ -216,7 +216,7 @@ mod tests {
 
     #[test]
     fn test_simple_insert_and_search() -> DbResult<()> {
-        let db = temp_db_with_cfg(|cfg| cfg.block_size(50))?;
+        let db = temp_db_with_cfg(|cfg| cfg.block_size(400))?;
         let mut index = setup_index(&db)?;
 
         index.insert(&Constant::Int(0), &RID::new(1, 1))?;
@@ -305,7 +305,7 @@ mod tests {
 
     #[test]
     fn test_index_10k_randomized_keys() -> DbResult<()> {
-        let db = temp_db_with_cfg(|cfg| cfg.block_size(200))?;
+        let db = temp_db_with_cfg(|cfg| cfg.block_size(400))?;
         let mut index = setup_index(&db)?;
 
         const NUM_KEYS: usize = 10000;
@@ -355,7 +355,7 @@ mod tests {
 
     #[test]
     fn test_index_10k_randomized_keys_with_delete() -> DbResult<()> {
-        let db = temp_db_with_cfg(|cfg| cfg.block_size(200))?;
+        let db = temp_db_with_cfg(|cfg| cfg.block_size(400))?;
         let mut index = setup_index(&db)?;
 
         const NUM_KEYS: usize = 10000;
@@ -415,7 +415,7 @@ mod tests {
 
     #[test]
     fn test_index_sequential_access() -> DbResult<()> {
-        let db = temp_db_with_cfg(|cfg| cfg.block_size(200))?;
+        let db = temp_db_with_cfg(|cfg| cfg.block_size(400))?;
         let mut index = setup_index(&db)?;
 
         const NUM_KEYS: usize = 10000;

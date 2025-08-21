@@ -34,10 +34,9 @@ impl<'a> SimpleDB<'a> {
                 Arc::new(MemStorageMgr::new(mem_config.block_size))
             },
         };
-        
-        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&storage_mgr), config.log_file_path().to_str().unwrap())?);
         let is_new_db = storage_mgr.is_new();
-        
+
+        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&storage_mgr), config.log_file_path().to_str().unwrap())?);
         let buffer_mgr = Arc::new(BufferMgr::new(
             Arc::clone(&storage_mgr),
             Arc::clone(&log_mgr),
@@ -57,8 +56,8 @@ impl<'a> SimpleDB<'a> {
         };
 
         let tx = db.new_tx()?;
-        let table_mgr = Arc::new(TableMgr::new(is_new_db /*TODO fix is_new work*/, tx.clone())?);
-        let index_mgr = Arc::new(IndexMgr::new(is_new_db /*TODO fix is_new work*/, Arc::clone(&table_mgr), tx.clone())?);
+        let table_mgr = Arc::new(TableMgr::new(is_new_db, tx.clone())?);
+        let index_mgr = Arc::new(IndexMgr::new(is_new_db, Arc::clone(&table_mgr), tx.clone())?);
 
         tx.commit()?;
         drop(tx);

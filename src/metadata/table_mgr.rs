@@ -106,31 +106,28 @@ impl TableMgr {
 
 #[cfg(test)]
 mod tests {
-    use crate::{error::DbResult, metadata::TableMgr, record::Schema, utils::testing_utils::temp_db};
+    use crate::{error::DbResult, record::Schema, utils::testing_utils::temp_db};
 
     #[test]
     fn test_table_mgr() -> DbResult<()> {
         let db = temp_db()?;
-        let tx = db.new_tx()?;
-        
-        // TODO fix this (is_new doesn't work)
-        let table_mgr = TableMgr::new(true, tx.clone())?;
-        
+        let tx: crate::tx::Transaction<'_> = db.new_tx()?;
+                
         let mut test_schema = Schema::new();
         test_schema.add_int_field("id");
         test_schema.add_string_field("name", 20);
         test_schema.add_int_field("age");
         
-        table_mgr.create_table("test_table", &test_schema, tx.clone())?;
+        db.metadata_mgr().create_table("test_table", &test_schema, tx.clone())?;
         
-        let layout = table_mgr.get_layout("test_table", tx.clone())?;
+        let layout = db.metadata_mgr().get_layout("test_table", tx.clone())?;
                         
         assert!(layout.slot_size() > 0);
         
         tx.commit()?;
         
         let tx2 = db.new_tx()?;
-        let layout2 = table_mgr.get_layout("test_table", tx2.clone())?;
+        let layout2 = db.metadata_mgr().get_layout("test_table", tx2.clone())?;
         
         assert_eq!(layout.slot_size(), layout2.slot_size());
         assert_eq!(layout.schema().fields().len(), layout2.schema().fields().len());
