@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use crate::buffer::BufferMgr;
 use crate::error::DbResult;
 use crate::log::LogMgr;
-use crate::metadata::{MetadataMgr, TableMgr};
+use crate::metadata::{IndexMgr, MetadataMgr, TableMgr};
 
 use crate::plan::Planner;
 use crate::storage::{StorageMgr, FileStorageMgr, MemStorageMgr};
@@ -57,11 +57,13 @@ impl<'a> SimpleDB<'a> {
         };
 
         let tx = db.new_tx()?;
-        let table_mgr = TableMgr::new(is_new_db, tx.clone())?;
+        let table_mgr = Arc::new(TableMgr::new(is_new_db /*TODO fix is_new work*/, tx.clone())?);
+        let index_mgr = Arc::new(IndexMgr::new(is_new_db /*TODO fix is_new work*/, Arc::clone(&table_mgr), tx.clone())?);
+
         tx.commit()?;
         drop(tx);
 
-        let metadata_mgr = Arc::new(MetadataMgr::new(table_mgr)?);
+        let metadata_mgr = Arc::new(MetadataMgr::new(table_mgr, index_mgr)?);
         let planner = Planner::new(Arc::clone(&metadata_mgr));
 
         db.metadata_mgr = Some(metadata_mgr);

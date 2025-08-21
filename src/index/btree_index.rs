@@ -57,12 +57,6 @@ impl<'tx> BTreeIndex<'tx> {
             root_block: BlockId::new(internal_table_name, 0),
         })
     }
-
-    fn search_cost(num_of_blocks: usize, records_per_block: usize) -> usize {
-        (1 + num_of_blocks.ilog(records_per_block))
-            .try_into()
-            .unwrap()
-    }
 }
 
 impl<'tx> fmt::Display for BTreeIndex<'tx> {

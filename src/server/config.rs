@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 /// Configuration for file-based storage manager
+#[derive(Clone)]
 pub struct FileStorageMgrConfig {
     pub db_directory: PathBuf,
     pub block_size: usize,
@@ -21,6 +22,7 @@ impl FileStorageMgrConfig {
 }
 
 /// Configuration for in-memory storage manager
+#[derive(Clone)]
 pub struct MemStorageMgrConfig {
     pub block_size: usize,
 }
@@ -39,6 +41,7 @@ impl MemStorageMgrConfig {
 }
 
 /// Configuration for different storage manager types
+#[derive(Clone)]
 pub enum StorageMgrConfig {
     File(FileStorageMgrConfig),
     Mem(MemStorageMgrConfig),
@@ -70,6 +73,7 @@ impl StorageMgrConfig {
     }
 }
 
+#[derive(Clone)]
 pub struct Config {
     pub storage_mgr: StorageMgrConfig,
     pub buffer_capacity: usize,

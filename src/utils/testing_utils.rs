@@ -5,11 +5,26 @@ use crate::{server::{config::StorageMgrConfig, Config}, DbResult, SimpleDB};
 
 const TEST_PAGE_SIZE: usize = 400;
 
-/// DB newtype which carries an instance of DB as well as TempDir. TempDir must be dropped after 
+/// DB newtype which carries an instance of DB as well as TempDir and Config. TempDir must be dropped after 
 /// DB is dropped.
 pub struct TempSimpleDB<'a> {
     db: Option<SimpleDB<'a>>,
-    _dir: TempDir,
+    cfg: Config,
+    dir: Option<TempDir>,
+}
+
+impl<'a> TempSimpleDB<'a> {
+    /// Consumes self and drops the current database. Opens a new database in the same directory with the same config. Transfers 
+    /// ownership of TempDir instance.
+    pub fn reopen<'b>(mut self) -> DbResult<TempSimpleDB<'b>> {
+        let tmp_dir = self.dir.take();
+        let cfg = self.cfg.clone();
+
+        drop(self); // destroy the current DB
+        
+        let new_db = SimpleDB::with_config(cfg.clone())?;
+        Ok(TempSimpleDB{db: Some(new_db), dir: tmp_dir, cfg: cfg})
+    }
 }
 
 impl<'a> Deref for TempSimpleDB<'a> {
@@ -38,6 +53,6 @@ pub fn temp_db_with_cfg<'a>(mut cfg_updater: impl FnMut(Config) -> Config) -> Db
     cfg = cfg.block_size(TEST_PAGE_SIZE);
     cfg = cfg_updater(cfg);
 
-    let db = SimpleDB::with_config(cfg)?;
-    return Ok(TempSimpleDB{ db: Some(db), _dir: temp_dir});
+    let db = SimpleDB::with_config(cfg.clone())?;
+    return Ok(TempSimpleDB{ db: Some(db), dir: Some(temp_dir), cfg: cfg});
 }
