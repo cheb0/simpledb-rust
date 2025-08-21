@@ -113,6 +113,7 @@ mod tests {
         let db = temp_db()?;
         let tx = db.new_tx()?;
         
+        // TODO fix this (is_new doesn't work)
         let table_mgr = TableMgr::new(true, tx.clone())?;
         
         let mut test_schema = Schema::new();
@@ -123,11 +124,7 @@ mod tests {
         table_mgr.create_table("test_table", &test_schema, tx.clone())?;
         
         let layout = table_mgr.get_layout("test_table", tx.clone())?;
-        
-        // assert!(layout.has_field("id"));
-        // assert!(layout.has_field("name"));
-        // assert!(layout.has_field("age"));
-                
+                        
         assert!(layout.slot_size() > 0);
         
         tx.commit()?;

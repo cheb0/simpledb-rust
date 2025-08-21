@@ -28,7 +28,7 @@ impl IndexMgr {
     }
 
     pub fn create_index(&self, index_name: &str, table_name: &str, field_name: &str, tx: Transaction<'_>) -> DbResult<()> {
-        let mut scan = TableScan::new(tx.clone(), IndexMgr::TABLE_NAME, self.layout.clone())?;
+        let mut scan = TableScan::new(tx.clone(), IndexMgr::INDEX_TABLE, self.layout.clone())?;
         scan.insert()?;
         scan.set_string(IndexMgr::INDEX_NAME, index_name)?;
         scan.set_string(IndexMgr::TABLE_NAME, table_name)?;
@@ -37,7 +37,7 @@ impl IndexMgr {
     }
 
     pub fn get_index_info<'tx>(&self, table_name: &str, tx: Transaction<'tx>) -> DbResult<HashMap<String, IndexInfo<'tx>>> {
-        let mut scan = TableScan::new(tx.clone(), IndexMgr::TABLE_NAME, self.layout.clone())?;
+        let mut scan = TableScan::new(tx.clone(), IndexMgr::INDEX_TABLE, self.layout.clone())?;
         let mut result = HashMap::new();
         while scan.next()? {
             if scan.get_string(IndexMgr::TABLE_NAME)? == table_name {
@@ -59,7 +59,7 @@ impl IndexMgr {
 
 #[cfg(test)]
 mod tests {
-    use crate::{utils::testing_utils::temp_db, DbResult};
+    use crate::{record::Schema, utils::testing_utils::temp_db, DbResult};
 
     #[test]
     fn test_zero_indexes() -> DbResult<()> {
@@ -77,14 +77,33 @@ mod tests {
         let db = temp_db()?;
         {
             let tx = db.new_tx()?;
-            db.metadata_mgr().create_index("test_index", "test_table", "name", tx.clone())?;
-            db.metadata_mgr().create_index("test_index", "test_table", "age", tx.clone())?;
+            
+            let mut schema = Schema::new();
+            schema.add_int_field("id");
+            schema.add_int_field("age");
+            schema.add_string_field("name", 10);
+            
+            db.metadata_mgr().create_table("persons", &schema, tx.clone())?;
+
+            db.metadata_mgr().create_index("test_index", "persons", "name", tx.clone())?;
+            db.metadata_mgr().create_index("test_index", "persons", "age", tx.clone())?;
             tx.commit()?;
         }
 
         {
             let tx = db.new_tx()?;
-            let indices = db.metadata_mgr().get_index_info("test_table", tx.clone())?;
+            let indices = db.metadata_mgr().get_index_info("persons", tx.clone())?;
+            
+            assert_eq!(indices.len(), 2, "Should have 2 indexes");
+            
+            let name_index = indices.get("name").expect("Name index should exist");
+            assert_eq!(name_index.index_name(), "test_index");
+            assert_eq!(name_index.field_name(), "name");
+            
+            let age_index = indices.get("age").expect("Age index should exist");
+            assert_eq!(age_index.index_name(), "test_index");
+            assert_eq!(age_index.field_name(), "age");
+            
             tx.commit()?;
         }
         Ok(())

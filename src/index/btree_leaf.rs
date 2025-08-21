@@ -271,7 +271,7 @@ mod btree_leaf_tests {
 
         // Verify overflow block was created
         assert!(split_result.is_none()); //  overflow block returns None
-        let PageType::Leaf(Some(overflow_num)) = leaf.contents.get_flag().unwrap() else {
+        let PageType::Leaf(Some(_overflow_num)) = leaf.contents.get_flag().unwrap() else {
             panic!("Expected overflow block");
         };
 

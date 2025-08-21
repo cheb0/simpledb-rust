@@ -57,8 +57,8 @@ impl<'a> SimpleDB<'a> {
         };
 
         let tx = db.new_tx()?;
-        let table_mgr = Arc::new(TableMgr::new(is_new_db, tx.clone())?);
-        let index_mgr = Arc::new(IndexMgr::new(is_new_db, Arc::clone(&table_mgr), tx.clone())?);
+        let table_mgr = Arc::new(TableMgr::new(is_new_db /*TODO fix is_new work*/, tx.clone())?);
+        let index_mgr = Arc::new(IndexMgr::new(is_new_db /*TODO fix is_new work*/, Arc::clone(&table_mgr), tx.clone())?);
 
         tx.commit()?;
         drop(tx);
