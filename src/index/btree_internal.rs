@@ -1,4 +1,14 @@
-use crate::{index::{btree_page::{InternalNodeEntry, PageType}, BTreePage}, query::Constant, record::Layout, storage::BlockId, tx::Transaction, DbResult};
+use crate::{
+    DbResult,
+    index::{
+        BTreePage,
+        btree_page::{InternalNodeEntry, PageType},
+    },
+    query::Constant,
+    record::Layout,
+    storage::BlockId,
+    tx::Transaction,
+};
 
 // Original implementation - https://github.com/redixhumayun/simpledb/blob/master/src/btree.rs
 
@@ -11,7 +21,11 @@ pub struct BTreeInternal<'tx> {
 
 impl std::fmt::Display for BTreeInternal<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "\n============= INTERNAL Node {:?} ===", self.contents.block_id())?;
+        writeln!(
+            f,
+            "\n============= INTERNAL Node {:?} ===",
+            self.contents.block_id()
+        )?;
         writeln!(f, "\nContents:")?;
         write!(f, "{}", self.contents)?;
         Ok(())
@@ -19,7 +33,12 @@ impl std::fmt::Display for BTreeInternal<'_> {
 }
 
 impl<'tx> BTreeInternal<'tx> {
-    pub fn new(txn: Transaction<'tx>, block_id: BlockId, layout: Layout, file_name: String) -> DbResult<Self> {
+    pub fn new(
+        txn: Transaction<'tx>,
+        block_id: BlockId,
+        layout: Layout,
+        file_name: String,
+    ) -> DbResult<Self> {
         let contents = BTreePage::new(txn.clone(), block_id.clone(), layout.clone())?;
         Ok(Self {
             txn,
@@ -35,11 +54,8 @@ impl<'tx> BTreeInternal<'tx> {
     pub fn search(&mut self, search_key: &Constant) -> DbResult<usize> {
         let mut child_block = self.find_child_block(search_key)?;
         while !matches!(self.contents.get_flag()?, PageType::Internal(None)) {
-            self.contents = BTreePage::new(
-                self.txn.clone(),
-                child_block.clone(),
-                self.layout.clone(),
-            )?;
+            self.contents =
+                BTreePage::new(self.txn.clone(), child_block.clone(), self.layout.clone())?;
             child_block = self.find_child_block(search_key)?;
         }
         Ok(child_block.number() as usize)
@@ -64,7 +80,8 @@ impl<'tx> BTreeInternal<'tx> {
         };
         self.insert_entry(new_block_entry)?;
         self.insert_entry(entry)?;
-        self.contents.set_flag(PageType::Internal(Some(level + 1)))?;
+        self.contents
+            .set_flag(PageType::Internal(Some(level + 1)))?;
         Ok(())
     }
 
@@ -72,10 +89,7 @@ impl<'tx> BTreeInternal<'tx> {
     /// It works in conjunction with [BTreeInternal::insert_internal_node_entry] to do the insertion
     /// This method will find the correct child block to insert it into and the [BTreeInternal::insert_internal_node_entry] will do the actual
     /// insertion into the specific block
-    pub fn insert(
-        &self,
-        entry: InternalNodeEntry,
-    ) -> DbResult<Option<InternalNodeEntry>> {
+    pub fn insert(&self, entry: InternalNodeEntry) -> DbResult<Option<InternalNodeEntry>> {
         if matches!(self.contents.get_flag()?, PageType::Internal(None)) {
             return self.insert_entry(entry);
         }
@@ -99,15 +113,13 @@ impl<'tx> BTreeInternal<'tx> {
     /// This method will insert a new entry into the [BTreeInternal] node
     /// It will find the appropriate slot for the new entry
     /// If the page is full, it will split the page and return the new entry
-    fn insert_entry(
-        &self,
-        entry: InternalNodeEntry,
-    ) -> DbResult<Option<InternalNodeEntry>> {
+    fn insert_entry(&self, entry: InternalNodeEntry) -> DbResult<Option<InternalNodeEntry>> {
         let slot = match self.contents.find_slot_before(&entry.dataval)? {
             Some(slot) => slot + 1, //  move to the insertion point
             None => 0,              //  the insertion point is at the first slot
         };
-        self.contents.insert_internal(slot, entry.dataval, entry.block_num)?;
+        self.contents
+            .insert_internal(slot, entry.dataval, entry.block_num)?;
 
         if !self.contents.is_full()? {
             return Ok(None);
@@ -134,7 +146,9 @@ impl<'tx> BTreeInternal<'tx> {
         // let next_v = self.contents.get_data_value(slot + 1)?;
         // println!("block_id: {:?}, search_key: {:?}, slot: {}, next_v; {:?}", self.contents.block_id(), search_key.clone(), slot, next_v);
 
-        if slot + 1 < self.contents.get_number_of_recs()? && self.contents.get_data_value(slot + 1)? == *search_key {
+        if slot + 1 < self.contents.get_number_of_recs()?
+            && self.contents.get_data_value(slot + 1)? == *search_key
+        {
             slot += 1;
         }
         let block_num = self.contents.get_child_block_num(slot)?;
@@ -144,7 +158,7 @@ impl<'tx> BTreeInternal<'tx> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{metadata::IndexInfo, record::Schema, utils::testing_utils::temp_db, SimpleDB};
+    use crate::{SimpleDB, metadata::IndexInfo, record::Schema, utils::testing_utils::temp_db};
 
     use super::*;
 
@@ -156,7 +170,9 @@ mod tests {
         Layout::new(schema)
     }
 
-    fn setup_internal_node<'tx>(db: &'tx SimpleDB<'tx>) -> DbResult<(Transaction<'tx>, BTreeInternal<'tx>)> {
+    fn setup_internal_node<'tx>(
+        db: &'tx SimpleDB<'tx>,
+    ) -> DbResult<(Transaction<'tx>, BTreeInternal<'tx>)> {
         let tx = db.new_tx()?;
         let block = tx.append("test")?;
         let layout = create_test_layout();

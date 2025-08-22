@@ -8,33 +8,33 @@ impl Constant {
     pub fn int(val: i32) -> Self {
         Constant::Int(val)
     }
-    
+
     pub fn string(val: impl Into<String>) -> Self {
         Constant::String(val.into())
     }
-    
+
     pub fn is_integer(&self) -> bool {
         matches!(self, Constant::Int(_))
     }
-    
+
     pub fn is_string(&self) -> bool {
         matches!(self, Constant::String(_))
     }
-    
+
     pub fn as_integer(&self) -> i32 {
         match self {
             Constant::Int(i) => *i,
             _ => panic!("Not an integer constant"),
         }
     }
-    
+
     pub fn as_string(&self) -> &str {
         match self {
             Constant::String(s) => s,
             _ => panic!("Not a string constant"),
         }
     }
-    
+
     pub fn to_string(&self) -> String {
         match self {
             Constant::Int(i) => i.to_string(),
@@ -83,27 +83,40 @@ mod tests {
     #[test]
     fn test_constant_comparison() {
         // Integer comparisons
-        assert_eq!(Constant::int(5).compare_to(&Constant::int(3)), std::cmp::Ordering::Greater);
-        assert_eq!(Constant::int(3).compare_to(&Constant::int(5)), std::cmp::Ordering::Less);
-        assert_eq!(Constant::int(5).compare_to(&Constant::int(5)), std::cmp::Ordering::Equal);
+        assert_eq!(
+            Constant::int(5).compare_to(&Constant::int(3)),
+            std::cmp::Ordering::Greater
+        );
+        assert_eq!(
+            Constant::int(3).compare_to(&Constant::int(5)),
+            std::cmp::Ordering::Less
+        );
+        assert_eq!(
+            Constant::int(5).compare_to(&Constant::int(5)),
+            std::cmp::Ordering::Equal
+        );
 
         // String comparisons
-        assert_eq!(Constant::string("abc").compare_to(&Constant::string("aaa")), std::cmp::Ordering::Greater);
-        assert_eq!(Constant::string("aaa").compare_to(&Constant::string("abc")), std::cmp::Ordering::Less);
-        assert_eq!(Constant::string("abc").compare_to(&Constant::string("abc")), std::cmp::Ordering::Equal);
+        assert_eq!(
+            Constant::string("abc").compare_to(&Constant::string("aaa")),
+            std::cmp::Ordering::Greater
+        );
+        assert_eq!(
+            Constant::string("aaa").compare_to(&Constant::string("abc")),
+            std::cmp::Ordering::Less
+        );
+        assert_eq!(
+            Constant::string("abc").compare_to(&Constant::string("abc")),
+            std::cmp::Ordering::Equal
+        );
 
         // Test Ord trait integration
-        let mut constants = vec![
-            Constant::int(3),
-            Constant::int(1),
-            Constant::int(2),
-        ];
+        let mut constants = vec![Constant::int(3), Constant::int(1), Constant::int(2)];
         constants.sort();
-        assert_eq!(constants, vec![
-            Constant::int(1),
-            Constant::int(2),
-            Constant::int(3),
-        ]);
+        assert_eq!(
+            constants,
+            vec![Constant::int(1), Constant::int(2), Constant::int(3),]
+        );
     }
 
     #[test]

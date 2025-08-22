@@ -47,7 +47,7 @@ impl LogRecord for SetStringRecord {
         tx.unpin(&self.blk);
         Ok(())
     }
-    
+
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -56,8 +56,8 @@ impl LogRecord for SetStringRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tx::recovery::log_record::create_log_record;
     use crate::storage::BlockId;
+    use crate::tx::recovery::log_record::create_log_record;
 
     #[test]
     fn test_set_string_record_serialization() -> crate::error::DbResult<()> {
@@ -65,21 +65,23 @@ mod tests {
         let test_string = "Hello, world!".to_string();
         let record = SetStringRecord::new(202, blk, 32, test_string.clone());
         let bytes = record.to_bytes()?;
-        
+
         let deserialized = create_log_record(&bytes)?;
-        
+
         assert_eq!(deserialized.op(), SETSTRING_FLAG);
         assert_eq!(deserialized.tx_id(), 202);
-        
-        let set_string = (&*deserialized).as_any().downcast_ref::<SetStringRecord>()
+
+        let set_string = (&*deserialized)
+            .as_any()
+            .downcast_ref::<SetStringRecord>()
             .expect("Failed to downcast to SetStringRecord");
-        
+
         assert_eq!(set_string.tx_id, 202);
         assert_eq!(set_string.offset, 32);
         assert_eq!(set_string.val, test_string);
         assert_eq!(set_string.blk.file_name(), "datafile");
         assert_eq!(set_string.blk.number(), 123);
-        
+
         Ok(())
     }
 }

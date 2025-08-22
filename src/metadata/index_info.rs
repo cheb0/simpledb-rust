@@ -1,4 +1,7 @@
-use crate::{record::{schema::FieldType, Layout, Schema}, tx::Transaction};
+use crate::{
+    record::{Layout, Schema, schema::FieldType},
+    tx::Transaction,
+};
 
 pub struct IndexInfo<'tx> {
     index_name: String,
@@ -13,14 +16,19 @@ impl<'a> IndexInfo<'a> {
     pub const ID_FIELD: &'static str = "id"; //  the record id (slot number)
     pub const DATA_FIELD: &'static str = "dataval"; //  the data field
 
-    pub fn new(index_name: String, field_name: String, tx: Transaction<'a>, table_schema: Schema) -> IndexInfo<'a> {
+    pub fn new(
+        index_name: String,
+        field_name: String,
+        tx: Transaction<'a>,
+        table_schema: Schema,
+    ) -> IndexInfo<'a> {
         let index_layout = IndexInfo::create_idx_layout(&field_name, &table_schema);
         Self {
             index_name,
             field_name,
             tx,
             table_schema,
-            index_layout
+            index_layout,
         }
     }
 
@@ -36,15 +44,15 @@ impl<'a> IndexInfo<'a> {
         let mut schema = Schema::new();
         schema.add_int_field(IndexInfo::BLOCK_NUM_FIELD);
         schema.add_int_field(IndexInfo::ID_FIELD);
-        
+
         match table_schema.field_type(field_name).unwrap() {
             FieldType::Integer => {
                 schema.add_int_field(IndexInfo::DATA_FIELD);
-            },
+            }
             FieldType::Varchar => {
                 let field_len = table_schema.length(field_name).unwrap();
                 schema.add_string_field(IndexInfo::DATA_FIELD, field_len);
-            },
+            }
         }
         Layout::new(schema)
     }

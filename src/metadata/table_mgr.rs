@@ -1,6 +1,11 @@
 use std::collections::HashMap;
 
-use crate::{error::DbResult, query::{Scan, UpdateScan}, record::{Layout, Schema, schema::{FieldType}, TableScan}, tx::Transaction};
+use crate::{
+    error::DbResult,
+    query::{Scan, UpdateScan},
+    record::{Layout, Schema, TableScan, schema::FieldType},
+    tx::Transaction,
+};
 
 pub struct TableMgr {
     tcat_layout: Layout,
@@ -9,7 +14,7 @@ pub struct TableMgr {
 
 impl TableMgr {
     pub const MAX_NAME: usize = 16;
-    
+
     pub fn new(is_new: bool, tx: Transaction) -> DbResult<Self> {
         let mut tcat_schema = Schema::new();
         tcat_schema.add_string_field("tblname", Self::MAX_NAME);
@@ -39,7 +44,7 @@ impl TableMgr {
 
     pub fn create_table(&self, tblname: &str, sch: &Schema, tx: Transaction) -> DbResult<()> {
         let layout = Layout::new(sch.clone());
-        
+
         {
             let mut tcat = TableScan::new(tx.clone(), "tblcat", self.tcat_layout.clone())?;
             tcat.insert()?;
@@ -70,7 +75,7 @@ impl TableMgr {
         let mut size = -1;
         {
             let mut tcat = TableScan::new(tx.clone(), "tblcat", self.tcat_layout.clone())?;
-        
+
             while tcat.next()? {
                 if tcat.get_string("tblname")? == tblname {
                     size = tcat.get_int("slotsize")?;
@@ -82,14 +87,14 @@ impl TableMgr {
         let mut sch = Schema::new();
         let mut offsets = HashMap::new();
         let mut fcat = TableScan::new(tx.clone(), "fldcat", self.fcat_layout.clone())?;
-        
+
         while fcat.next()? {
             if fcat.get_string("tblname")? == tblname {
                 let fldname = fcat.get_string("fldname")?;
                 let fldtype = fcat.get_int("type")?;
                 let fldlen = fcat.get_int("length")?;
                 let offset = fcat.get_int("offset")?;
-                
+
                 offsets.insert(fldname.clone(), offset as usize);
                 let field_type = match fldtype {
                     0 => FieldType::Integer,
@@ -99,7 +104,7 @@ impl TableMgr {
                 sch.add_field(&fldname, field_type, fldlen as usize);
             }
         }
-        
+
         Ok(Layout::with_offsets(sch, offsets, size as usize))
     }
 }
@@ -112,26 +117,30 @@ mod tests {
     fn test_table_mgr() -> DbResult<()> {
         let db = temp_db()?;
         let tx: crate::tx::Transaction<'_> = db.new_tx()?;
-                
+
         let mut test_schema = Schema::new();
         test_schema.add_int_field("id");
         test_schema.add_string_field("name", 20);
         test_schema.add_int_field("age");
-        
-        db.metadata_mgr().create_table("test_table", &test_schema, tx.clone())?;
-        
+
+        db.metadata_mgr()
+            .create_table("test_table", &test_schema, tx.clone())?;
+
         let layout = db.metadata_mgr().get_layout("test_table", tx.clone())?;
-                        
+
         assert!(layout.slot_size() > 0);
-        
+
         tx.commit()?;
-        
+
         let tx2 = db.new_tx()?;
         let layout2 = db.metadata_mgr().get_layout("test_table", tx2.clone())?;
-        
+
         assert_eq!(layout.slot_size(), layout2.slot_size());
-        assert_eq!(layout.schema().fields().len(), layout2.schema().fields().len());
-        
+        assert_eq!(
+            layout.schema().fields().len(),
+            layout2.schema().fields().len()
+        );
+
         tx2.commit()?;
         Ok(())
     }

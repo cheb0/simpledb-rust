@@ -1,10 +1,10 @@
 use std::io;
 use std::sync::Arc;
 
-use crate::storage::BlockId;
-use crate::storage::StorageMgr;
 use crate::log::LogMgr;
+use crate::storage::BlockId;
 use crate::storage::Page;
+use crate::storage::StorageMgr;
 
 /// Represents a buffer, which is a memory region that contains a disk block.
 pub struct Buffer {

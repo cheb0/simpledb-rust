@@ -1,8 +1,8 @@
+use super::Layout;
+use super::schema::FieldType;
 use crate::error::DbResult;
 use crate::storage::BlockId;
 use crate::tx::Transaction;
-use super::Layout;
-use super::schema::FieldType;
 
 const EMPTY: i32 = 0;
 const USED: i32 = 1;
@@ -20,26 +20,26 @@ impl<'a> RecordPage<'a> {
     }
 
     pub fn get_int(&self, slot: usize, field_name: &str) -> DbResult<i32> {
-        let field_pos = self.offset(slot) + self.layout.offset(field_name)
-            .expect("Field not found");
+        let field_pos =
+            self.offset(slot) + self.layout.offset(field_name).expect("Field not found");
         self.tx.get_int(&self.blk, field_pos)
     }
 
     pub fn get_string(&self, slot: usize, field_name: &str) -> DbResult<String> {
-        let field_pos = self.offset(slot) + self.layout.offset(field_name)
-            .expect("Field not found");
+        let field_pos =
+            self.offset(slot) + self.layout.offset(field_name).expect("Field not found");
         self.tx.get_string(&self.blk, field_pos)
     }
 
     pub fn set_int(&self, slot: usize, field_name: &str, val: i32) -> DbResult<()> {
-        let field_pos = self.offset(slot) + self.layout.offset(field_name)
-            .expect("Field not found");
+        let field_pos =
+            self.offset(slot) + self.layout.offset(field_name).expect("Field not found");
         self.tx.set_int(&self.blk, field_pos, val, true)
     }
 
     pub fn set_string(&self, slot: usize, field_name: &str, val: &str) -> DbResult<()> {
-        let field_pos = self.offset(slot) + self.layout.offset(field_name)
-            .expect("Field not found");
+        let field_pos =
+            self.offset(slot) + self.layout.offset(field_name).expect("Field not found");
         self.tx.set_string(&self.blk, field_pos, val, true)
     }
 
@@ -50,14 +50,18 @@ impl<'a> RecordPage<'a> {
     pub fn format(&self) -> DbResult<()> {
         let mut slot = 0;
         while self.is_valid_slot(slot) {
-            self.tx.set_int(&self.blk, self.offset(slot), EMPTY, false)?;
+            self.tx
+                .set_int(&self.blk, self.offset(slot), EMPTY, false)?;
 
             for field_name in self.layout.schema().fields() {
-                let field_pos = self.offset(slot) + self.layout.offset(field_name)
-                    .expect("Field not found");
-                
-                match self.layout.schema().field_type(field_name)
-                    .expect("Field type not found") 
+                let field_pos =
+                    self.offset(slot) + self.layout.offset(field_name).expect("Field not found");
+
+                match self
+                    .layout
+                    .schema()
+                    .field_type(field_name)
+                    .expect("Field type not found")
                 {
                     FieldType::Integer => {
                         self.tx.set_int(&self.blk, field_pos, 0, false)?;
@@ -124,7 +128,7 @@ mod tests {
     use super::*;
     use crate::error::DbResult;
     use crate::record::schema::Schema;
-    use crate::utils::testing_utils::{temp_db_with_cfg};
+    use crate::utils::testing_utils::temp_db_with_cfg;
 
     #[test]
     fn test_record_page_basic() -> DbResult<()> {
@@ -137,7 +141,7 @@ mod tests {
         let tx = db.new_tx()?;
 
         let blk = tx.append("testfile")?;
-        
+
         let buffer_mgr = db.buffer_mgr();
         assert_eq!(3, buffer_mgr.available());
 
@@ -157,4 +161,4 @@ mod tests {
         tx.commit()?;
         Ok(())
     }
-} 
+}

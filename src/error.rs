@@ -1,5 +1,5 @@
-use thiserror::Error;
 use bincode;
+use thiserror::Error;
 
 use crate::storage::BlockId;
 
@@ -13,13 +13,13 @@ pub enum DbError {
 
     #[error("Log inconsistent")]
     LogInconsistent,
-    
+
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
     #[error("Schema exception: {0}")]
     Schema(String),
-    
+
     #[error("Serialization error: {0}")]
     Serialization(String),
 

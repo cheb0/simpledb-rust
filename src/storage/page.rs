@@ -1,5 +1,5 @@
-use std::io::Cursor;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use std::io::Cursor;
 
 /// Represents a page of data in the database.
 /// A page is a fixed-size block of bytes that can store various data types.
@@ -62,7 +62,7 @@ impl Page {
     pub fn contents(&self) -> &[u8] {
         &self.buffer
     }
-    
+
     pub fn contents_mut(&mut self) -> &mut [u8] {
         &mut self.buffer
     }
@@ -93,16 +93,16 @@ mod tests {
     #[test]
     fn test_get_set_int() {
         let mut page = Page::new(100);
-        
+
         page.set_int(0, 42);
         assert_eq!(page.get_int(0), 42);
-        
+
         page.set_int(4, -123);
         assert_eq!(page.get_int(4), -123);
-        
+
         page.set_int(8, i32::MAX);
         assert_eq!(page.get_int(8), i32::MAX);
-        
+
         page.set_int(12, i32::MIN);
         assert_eq!(page.get_int(12), i32::MIN);
     }
@@ -111,15 +111,15 @@ mod tests {
     fn test_get_set_bytes() {
         let mut page = Page::new(100);
         let test_data = vec![10, 20, 30, 40, 50];
-        
+
         page.set_bytes(0, &test_data);
         let retrieved = page.get_bytes(0);
         assert_eq!(retrieved, test_data);
-        
+
         let empty: Vec<u8> = vec![];
         page.set_bytes(20, &empty);
         assert_eq!(page.get_bytes(20), empty);
-        
+
         let large_data: Vec<u8> = (0..50).collect();
         page.set_bytes(30, &large_data);
         assert_eq!(page.get_bytes(30), large_data);
@@ -128,14 +128,14 @@ mod tests {
     #[test]
     fn test_get_set_string() {
         let mut page = Page::new(100);
-        
+
         let test_str = "Hello, world!";
         page.set_string(0, test_str);
         assert_eq!(page.get_string(0), test_str);
-        
+
         page.set_string(20, "");
         assert_eq!(page.get_string(20), "");
-        
+
         let special = "Special chars: !@#$%^&*()_+";
         page.set_string(30, special);
         assert_eq!(page.get_string(30), special);
@@ -148,9 +148,9 @@ mod tests {
     #[test]
     fn test_contents() {
         let mut page = Page::new(10);
-        
+
         assert_eq!(page.contents().len(), 10);
-        
+
         page.contents_mut()[0] = 42;
         assert_eq!(page.buffer[0], 42);
     }
@@ -158,15 +158,15 @@ mod tests {
     #[test]
     fn test_complex_scenario() {
         let mut page = Page::new(1000);
-        
+
         page.set_int(0, 12345);
         page.set_string(4, "This is a test string");
         page.set_bytes(100, &[1, 2, 3, 4, 5]);
         page.set_int(200, -98765);
-        
+
         assert_eq!(page.get_int(0), 12345);
         assert_eq!(page.get_string(4), "This is a test string");
         assert_eq!(page.get_bytes(100), vec![1, 2, 3, 4, 5]);
         assert_eq!(page.get_int(200), -98765);
     }
-} 
+}

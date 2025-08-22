@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use super::lock_table::LockTable;
 use crate::error::DbResult;
 use crate::storage::BlockId;
-use super::lock_table::LockTable;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LockType {
@@ -14,7 +14,7 @@ pub enum LockType {
 /// Concurrency manager which maintains all locks held by transactions.
 /// Interrior mutable.
 pub struct ConcurrencyMgr {
-    pub /*TODO*/ lock_table: Arc<LockTable>,
+    pub lock_table: Arc<LockTable>,
     locks: HashMap<BlockId, LockType>,
 }
 
@@ -67,12 +67,12 @@ mod tests {
         let lock_table = Arc::new(LockTable::new());
         let mut ccy_mgr = ConcurrencyMgr::new(Arc::clone(&lock_table));
         let blk = BlockId::new("testfile".to_string(), 1);
-        
+
         ccy_mgr.lock_shared(&blk)?;
-        
+
         let lock_table_clone = Arc::clone(&lock_table);
         let blk_clone = blk.clone();
-        
+
         let handle = thread::spawn(move || -> DbResult<()> {
             let mut cm2: ConcurrencyMgr = ConcurrencyMgr::new(lock_table_clone);
             cm2.lock_shared(&blk_clone)?;
@@ -81,22 +81,22 @@ mod tests {
 
             // two S locks - fail to acquire X lock
             assert!(matches!(result, Err(DbError::LockAbort)));
-            
+
             cm2.release();
             Ok(())
         });
-        
+
         handle.join().unwrap()?;
-        
+
         // single S lock now - should acquire X lock
         let result = ccy_mgr.lock_exclusive(&blk);
         assert!(result.is_ok());
 
         ccy_mgr.release();
-        
+
         let lock_table_clone = Arc::clone(&lock_table);
         let blk_clone = blk.clone();
-        
+
         let handle = thread::spawn(move || -> DbResult<()> {
             // it's free, should be able to acquire X lock
             let mut cm3 = ConcurrencyMgr::new(lock_table_clone);
@@ -104,9 +104,9 @@ mod tests {
             cm3.release();
             Ok(())
         });
-        
+
         handle.join().unwrap()?;
-        
+
         Ok(())
     }
-} 
+}

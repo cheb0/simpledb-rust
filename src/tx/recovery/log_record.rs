@@ -20,7 +20,6 @@ pub const SETINT_FLAG: i32 = 4;
 pub const SETSTRING_FLAG: i32 = 5;
 
 pub trait LogRecord: Send + Sync {
-
     fn op(&self) -> i32;
 
     fn tx_id(&self) -> i32;
@@ -34,7 +33,7 @@ pub trait LogRecord: Send + Sync {
 /// Creates a log record from bytes.
 pub fn create_log_record(bytes: &[u8]) -> DbResult<Box<dyn LogRecord>> {
     let record_flag = bytes[0] as i32;
-    
+
     match record_flag {
         CHECKPOINT_FLAG => Ok(Box::new(deserialize::<CheckpointRecord>(&bytes[1..])?)),
         START_FLAG => Ok(Box::new(deserialize::<StartRecord>(&bytes[1..])?)),
@@ -42,6 +41,9 @@ pub fn create_log_record(bytes: &[u8]) -> DbResult<Box<dyn LogRecord>> {
         ROLLBACK_FLAG => Ok(Box::new(deserialize::<RollbackRecord>(&bytes[1..])?)),
         SETINT_FLAG => Ok(Box::new(deserialize::<SetIntRecord>(&bytes[1..])?)),
         SETSTRING_FLAG => Ok(Box::new(deserialize::<SetStringRecord>(&bytes[1..])?)),
-        _ => Err(crate::error::DbError::Schema(format!("Unknown log record type: {}", record_flag))),
+        _ => Err(crate::error::DbError::Schema(format!(
+            "Unknown log record type: {}",
+            record_flag
+        ))),
     }
 }

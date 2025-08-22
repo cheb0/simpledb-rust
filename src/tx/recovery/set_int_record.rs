@@ -56,21 +56,23 @@ impl LogRecord for SetIntRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tx::recovery::log_record::create_log_record;
     use crate::storage::BlockId;
+    use crate::tx::recovery::log_record::create_log_record;
 
     #[test]
     fn test_set_int_record_serialization() -> crate::error::DbResult<()> {
         let blk = BlockId::new("testfile".to_string(), 42);
         let record = SetIntRecord::new(101, blk, 16, 9999);
         let bytes = record.to_bytes()?;
-        
+
         let deserialized = create_log_record(&bytes)?;
-        
+
         assert_eq!(deserialized.op(), SETINT_FLAG);
         assert_eq!(deserialized.tx_id(), 101);
-        
-        let set_int = (&*deserialized).as_any().downcast_ref::<SetIntRecord>()
+
+        let set_int = (&*deserialized)
+            .as_any()
+            .downcast_ref::<SetIntRecord>()
             .expect("Failed to downcast to SetIntRecord");
         assert_eq!(set_int.tx_id, 101);
         assert_eq!(set_int.offset, 16);

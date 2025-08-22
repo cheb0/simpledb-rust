@@ -1,6 +1,6 @@
-use std::collections::HashMap;
-use super::schema::{Schema, FieldType};
+use super::schema::{FieldType, Schema};
 use crate::storage::Page;
+use std::collections::HashMap;
 
 /// Description of the structure of a record.
 /// It contains the name, type, length and offset of
@@ -16,12 +16,12 @@ impl Layout {
     pub fn new(schema: Schema) -> Self {
         let mut offsets = HashMap::new();
         let mut pos = std::mem::size_of::<i32>();
-        
+
         for field_name in schema.fields() {
             offsets.insert(field_name.clone(), pos);
             pos += Self::length_in_bytes(&schema, field_name);
         }
-        
+
         Layout {
             schema,
             offsets,
@@ -52,9 +52,9 @@ impl Layout {
     fn length_in_bytes(schema: &Schema, field_name: &str) -> usize {
         match schema.field_type(field_name).expect("Field not found") {
             FieldType::Integer => std::mem::size_of::<i32>(),
-            FieldType::Varchar => Page::max_length(
-                schema.length(field_name).expect("Field length not found")
-            ),
+            FieldType::Varchar => {
+                Page::max_length(schema.length(field_name).expect("Field length not found"))
+            }
         }
     }
 }
@@ -72,10 +72,10 @@ mod tests {
         let layout = Layout::new(schema);
 
         assert_eq!(layout.offset("id"), Some(4));
-        
+
         let name_offset = layout.offset("name").unwrap();
         assert!(name_offset > 4);
-        
+
         assert!(layout.slot_size() > name_offset);
     }
-} 
+}

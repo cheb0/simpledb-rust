@@ -1,6 +1,6 @@
+use std::marker::PhantomData;
 use std::path::Path;
 use std::sync::Arc;
-use std::marker::PhantomData;
 
 use crate::buffer::BufferMgr;
 use crate::error::DbResult;
@@ -8,9 +8,9 @@ use crate::log::LogMgr;
 use crate::metadata::{IndexMgr, MetadataMgr, TableMgr};
 
 use crate::plan::Planner;
-use crate::storage::{StorageMgr, FileStorageMgr, MemStorageMgr};
-use crate::tx::concurrency::LockTable;
+use crate::storage::{FileStorageMgr, MemStorageMgr, StorageMgr};
 use crate::tx::Transaction;
+use crate::tx::concurrency::LockTable;
 
 use super::Config;
 
@@ -27,16 +27,19 @@ pub struct SimpleDB<'a> {
 impl<'a> SimpleDB<'a> {
     pub fn with_config(config: Config) -> DbResult<Self> {
         let storage_mgr: Arc<dyn StorageMgr> = match &config.storage_mgr {
-            crate::server::config::StorageMgrConfig::File(file_config) => {
-                Arc::new(FileStorageMgr::new(&file_config.db_directory, file_config.block_size)?)
-            },
+            crate::server::config::StorageMgrConfig::File(file_config) => Arc::new(
+                FileStorageMgr::new(&file_config.db_directory, file_config.block_size)?,
+            ),
             crate::server::config::StorageMgrConfig::Mem(mem_config) => {
                 Arc::new(MemStorageMgr::new(mem_config.block_size))
-            },
+            }
         };
         let is_new_db = storage_mgr.is_new();
 
-        let log_mgr = Arc::new(LogMgr::new(Arc::clone(&storage_mgr), config.log_file_path().to_str().unwrap())?);
+        let log_mgr = Arc::new(LogMgr::new(
+            Arc::clone(&storage_mgr),
+            config.log_file_path().to_str().unwrap(),
+        )?);
         let buffer_mgr = Arc::new(BufferMgr::new(
             Arc::clone(&storage_mgr),
             Arc::clone(&log_mgr),
@@ -57,7 +60,11 @@ impl<'a> SimpleDB<'a> {
 
         let tx = db.new_tx()?;
         let table_mgr = Arc::new(TableMgr::new(is_new_db, tx.clone())?);
-        let index_mgr = Arc::new(IndexMgr::new(is_new_db, Arc::clone(&table_mgr), tx.clone())?);
+        let index_mgr = Arc::new(IndexMgr::new(
+            is_new_db,
+            Arc::clone(&table_mgr),
+            tx.clone(),
+        )?);
 
         tx.commit()?;
         drop(tx);
@@ -67,7 +74,7 @@ impl<'a> SimpleDB<'a> {
 
         db.metadata_mgr = Some(metadata_mgr);
         db.planner = Some(planner);
-        
+
         Ok(db)
     }
 
@@ -78,7 +85,7 @@ impl<'a> SimpleDB<'a> {
     pub fn new_mem() -> DbResult<Self> {
         Self::with_config(Config::mem())
     }
-/* 
+    /*
     pub fn load_metadata(&mut self) -> DbResult<()> {
         let tx = Transaction::new(
             &*self.storage_mgr,
@@ -86,10 +93,10 @@ impl<'a> SimpleDB<'a> {
             &self.buffer_mgr,
             Arc::clone(&self.lock_table),
         )?;
-        
+
         let md_mgr = MetadataMgr::new(false, tx.clone())?;
         tx.commit()?;
-        
+
         self.metadata_mgr = Arc::new(md_mgr);
         Ok(())
     } */
@@ -126,29 +133,29 @@ mod tests {
     #[test]
     fn test_simple_db() -> DbResult<()> {
         let temp_dir = TempDir::new().unwrap();
-        
+
         let db = SimpleDB::with_config(
             Config::new(StorageMgrConfig::file(temp_dir.path()))
                 .block_size(400)
                 .buffer_capacity(5)
-                .log_file("testlog")
+                .log_file("testlog"),
         )?;
 
         let md_mgr = db.metadata_mgr();
-        
+
         let tx = db.new_tx()?;
-        
+
         let mut test_schema = Schema::new();
         test_schema.add_int_field("id");
         test_schema.add_string_field("name", 20);
-        
+
         md_mgr.create_table("test_table", &test_schema, tx.clone())?;
-        
+
         let layout = md_mgr.get_layout("test_table", tx.clone())?;
         assert!(layout.slot_size() > 0);
-        
+
         tx.commit()?;
-        
+
         Ok(())
     }
-} 
+}
