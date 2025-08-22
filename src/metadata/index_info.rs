@@ -32,7 +32,7 @@ impl<'a> IndexInfo<'a> {
         &self.field_name
     }
 
-    fn create_idx_layout(field_name: &str, table_schema: &Schema) -> Layout {
+    pub fn create_idx_layout(field_name: &str, table_schema: &Schema) -> Layout {
         let mut schema = Schema::new();
         schema.add_int_field(IndexInfo::BLOCK_NUM_FIELD);
         schema.add_int_field(IndexInfo::ID_FIELD);
