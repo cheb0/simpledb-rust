@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{metadata::MetadataMgr, parse::{Parser, Statement}, plan::{project_plan::ProjectPlan, select_plan::SelectPlan, table_plan::TablePlan, Plan}, query::{Scan, UpdateScan}, record::{Schema, TableScan}, tx::Transaction, DbResult};
+use crate::{metadata::MetadataMgr, parse::{Parser, Statement}, plan::{project_plan::ProjectPlan, select_plan::SelectPlan, table_plan::TablePlan, Plan}, query::{Scan, UpdateScan}, record::{Schema, TableScan}, tx::Transaction, DbResult, index::Index};
 
 pub struct Planner {
     parser: Parser,
@@ -65,11 +65,20 @@ impl Planner {
         let mut scan = TableScan::new(tx.clone(), table_name, layout)?;
         
         scan.insert()?;
+        let rid = scan.get_rid()?;        
+        let indexes = self.metadata_mgr.get_index_info(table_name, tx.clone())?;
+
         for (field, value) in fields.iter().zip(values.iter()) {
             scan.set_val(field, value.clone())?;
+            
+            if let Some(index_info) = indexes.get(field) {
+                let mut index = index_info.open(tx.clone())?;
+                index.insert(value, &rid)?;
+                index.close();
+            }
         }
-        scan.close();
         
+        scan.close();
         Ok(1)
     }
 
@@ -96,7 +105,6 @@ impl Planner {
                 }
             }
         } else {
-            // Update all records
             scan.before_first()?;
             while scan.next()? {
                 for (field, value) in fields.iter().zip(values.iter()) {
@@ -108,5 +116,120 @@ impl Planner {
         
         scan.close();
         Ok(affected_rows)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        index::Index, query::Constant, record::{schema::Schema, Layout}, utils::testing_utils::temp_db
+    };
+
+    #[test]
+    fn test_execute_insert_with_index_maintenance() -> DbResult<()> {
+        let db = temp_db()?;
+        
+        let mut schema = Schema::new();
+        schema.add_int_field("id");
+        schema.add_string_field("name", 20);
+        schema.add_int_field("age");
+        
+        let tx = db.new_tx()?;
+        
+        db.metadata_mgr().create_table("test_table", &schema, tx.clone())?;
+        db.metadata_mgr().create_index("age_idx", "test_table", "age", tx.clone())?;
+        
+        let insert_sql = "INSERT INTO test_table (id, name, age) VALUES (1, 'Alice', 25)";
+        let result = db.planner().execute_update(insert_sql, tx.clone())?;
+        assert_eq!(result, 1);
+        
+        let indexes = db.metadata_mgr().get_index_info("test_table", tx.clone())?;
+        assert!(indexes.contains_key("age"));
+        
+        let age_index_info = indexes.get("age").unwrap();
+        let mut age_index = age_index_info.open(tx.clone())?;
+
+        age_index.before_first(&Constant::int(25))?;
+        assert!(age_index.next()?, "Should find the inserted age value");
+        
+        let rid = age_index.get_data_rid()?;
+        assert_eq!(rid.block_number(), 0);
+        assert_eq!(rid.slot(), 1);
+        age_index.close();
+
+        // Verify we can actually navigate to record
+        let mut table_scan = TableScan::new(tx.clone(), "test_table", Layout::new(schema))?;
+        table_scan.move_to_rid(rid)?;
+        assert_eq!(1, table_scan.get_int("id")?);
+        assert_eq!("Alice", table_scan.get_string("name")?);
+        assert_eq!(25, table_scan.get_int("age")?);
+        table_scan.close();
+
+        tx.commit()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_execute_insert_with_string_index() -> DbResult<()> {
+        let db = temp_db()?;
+        
+        let mut schema = Schema::new();
+        schema.add_int_field("id");
+        schema.add_string_field("name", 20);
+        schema.add_int_field("age");
+        
+        let tx = db.new_tx()?;
+        
+        db.metadata_mgr().create_table("test_table", &schema, tx.clone())?;
+        db.metadata_mgr().create_index("name_idx", "test_table", "name", tx.clone())?;
+        
+        let result = db.planner().execute_update(
+            &format!("INSERT INTO test_table (id, name, age) VALUES (1, 'Bob', 30)"),
+            tx.clone()
+        )?;
+        assert_eq!(result, 1);
+        
+        let indexes = db.metadata_mgr().get_index_info("test_table", tx.clone())?;
+        assert!(indexes.contains_key("name"));
+        
+        let name_index_info = indexes.get("name").unwrap();
+        let mut name_index = name_index_info.open(tx.clone())?;
+        
+        name_index.before_first(&Constant::string("Bob"))?;
+        assert!(name_index.next()?, "Should find the inserted name value");
+        
+        let rid = name_index.get_data_rid()?;
+        assert_eq!(rid.block_number(), 0);
+        assert_eq!(rid.slot(), 1);
+        
+        name_index.close();
+        tx.commit()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_execute_insert_without_indexes() -> DbResult<()> {
+        let db = temp_db()?;
+        
+        let mut schema = Schema::new();
+        schema.add_int_field("id");
+        schema.add_string_field("name", 20);
+        schema.add_int_field("age");
+        
+        let tx = db.new_tx()?;
+        db.metadata_mgr().create_table("test_table", &schema, tx.clone())?;
+        
+        let result = db.planner().execute_update(
+            &format!("INSERT INTO test_table (id, name, age) VALUES (1, 'Charlie', 35)"),
+            tx.clone()
+        )?;
+        assert_eq!(result, 1);
+        
+        let indexes = db.metadata_mgr().get_index_info("test_table", tx.clone())?;
+        assert_eq!(indexes.len(), 0);
+        
+        tx.commit()?;
+        Ok(())
     }
 }

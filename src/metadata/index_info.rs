@@ -1,4 +1,4 @@
-use crate::{record::{schema::FieldType, Layout, Schema}, tx::Transaction};
+use crate::{index::BTreeIndex, record::{schema::FieldType, Layout, Schema}, tx::Transaction};
 
 pub struct IndexInfo<'tx> {
     index_name: String,
@@ -20,7 +20,7 @@ impl<'a> IndexInfo<'a> {
             field_name,
             tx,
             table_schema,
-            index_layout
+            index_layout,
         }
     }
 
@@ -36,16 +36,21 @@ impl<'a> IndexInfo<'a> {
         let mut schema = Schema::new();
         schema.add_int_field(IndexInfo::BLOCK_NUM_FIELD);
         schema.add_int_field(IndexInfo::ID_FIELD);
-        
+
         match table_schema.field_type(field_name).unwrap() {
             FieldType::Integer => {
                 schema.add_int_field(IndexInfo::DATA_FIELD);
-            },
+            }
             FieldType::Varchar => {
                 let field_len = table_schema.length(field_name).unwrap();
                 schema.add_string_field(IndexInfo::DATA_FIELD, field_len);
-            },
+            }
         }
         Layout::new(schema)
+    }
+
+    pub fn open<'tx>(&self, tx: Transaction<'tx>) -> crate::DbResult<crate::index::BTreeIndex<'tx>> {
+        let index_layout = Self::create_idx_layout(&self.field_name, &self.table_schema);
+        BTreeIndex::new(tx, &self.index_name, index_layout)
     }
 }
