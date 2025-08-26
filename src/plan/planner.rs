@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::{
     DbResult,
+    index::Index,
     metadata::MetadataMgr,
     parse::{Parser, Statement},
     plan::{Plan, project_plan::ProjectPlan, select_plan::SelectPlan, table_plan::TablePlan},
@@ -93,7 +94,7 @@ impl Planner {
     ) -> DbResult<i32> {
         let layout = self.metadata_mgr.get_layout(table_name, tx.clone())?;
         let mut scan = TableScan::new(tx.clone(), table_name, layout)?;
-        
+
         scan.insert()?;
         let rid = scan.get_rid()?;
         let indexes = self.metadata_mgr.get_index_info(table_name, tx.clone())?;
@@ -162,12 +163,14 @@ impl Planner {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
-        index::Index, query::Constant, record::{schema::Schema, Layout}, utils::testing_utils::temp_db
+        index::Index,
+        query::Constant,
+        record::{Layout, schema::Schema},
+        utils::testing_utils::temp_db,
     };
 
     #[test]
@@ -181,8 +184,10 @@ mod tests {
 
         let tx = db.new_tx()?;
 
-        db.metadata_mgr().create_table("test_table", &schema, tx.clone())?;
-        db.metadata_mgr().create_index("age_idx", "test_table", "age", tx.clone())?;
+        db.metadata_mgr()
+            .create_table("test_table", &schema, tx.clone())?;
+        db.metadata_mgr()
+            .create_index("age_idx", "test_table", "age", tx.clone())?;
 
         let insert_sql = "INSERT INTO test_table (id, name, age) VALUES (1, 'Alice', 25)";
         let result = db.planner().execute_update(insert_sql, tx.clone())?;
@@ -225,12 +230,14 @@ mod tests {
 
         let tx = db.new_tx()?;
 
-        db.metadata_mgr().create_table("test_table", &schema, tx.clone())?;
-        db.metadata_mgr().create_index("name_idx", "test_table", "name", tx.clone())?;
+        db.metadata_mgr()
+            .create_table("test_table", &schema, tx.clone())?;
+        db.metadata_mgr()
+            .create_index("name_idx", "test_table", "name", tx.clone())?;
 
         let result = db.planner().execute_update(
             &format!("INSERT INTO test_table (id, name, age) VALUES (1, 'Bob', 30)"),
-            tx.clone()
+            tx.clone(),
         )?;
         assert_eq!(result, 1);
 
@@ -262,11 +269,12 @@ mod tests {
         schema.add_int_field("age");
 
         let tx = db.new_tx()?;
-        db.metadata_mgr().create_table("test_table", &schema, tx.clone())?;
+        db.metadata_mgr()
+            .create_table("test_table", &schema, tx.clone())?;
 
         let result = db.planner().execute_update(
             &format!("INSERT INTO test_table (id, name, age) VALUES (1, 'Charlie', 35)"),
-            tx.clone()
+            tx.clone(),
         )?;
         assert_eq!(result, 1);
 

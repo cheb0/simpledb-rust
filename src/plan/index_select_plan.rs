@@ -41,7 +41,8 @@ impl Plan for IndexSelectPlan {
             tx,
             &self.table_name,
             Layout::new(self.plan.schema().clone()),
-        ).unwrap();
+        )
+        .unwrap();
 
         Box::new(
             IndexSelectScan::new(table_scan, Box::new(index), self.search_value.clone()).unwrap(),

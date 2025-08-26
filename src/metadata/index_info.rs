@@ -1,4 +1,5 @@
 use crate::{
+    index::BTreeIndex,
     record::{Layout, Schema, schema::FieldType},
     tx::Transaction,
 };
@@ -57,7 +58,10 @@ impl<'a> IndexInfo<'a> {
         Layout::new(schema)
     }
 
-    pub fn open<'tx>(&self, tx: Transaction<'tx>) -> crate::DbResult<crate::index::BTreeIndex<'tx>> {
+    pub fn open<'tx>(
+        &self,
+        tx: Transaction<'tx>,
+    ) -> crate::DbResult<crate::index::BTreeIndex<'tx>> {
         let index_layout = Self::create_idx_layout(&self.field_name, &self.table_schema);
         BTreeIndex::new(tx, &self.index_name, index_layout)
     }

@@ -1,6 +1,5 @@
 pub mod index_select_plan;
 pub mod planner;
-pub mod planner;
 pub mod project_plan;
 pub mod select_plan;
 pub mod table_plan;
