@@ -13,7 +13,7 @@ use crate::{
 // Original implementation - https://github.com/redixhumayun/simpledb/blob/master/src/btree.rs
 
 pub struct BTreeInternal<'tx> {
-    txn: Transaction<'tx>,
+    tx: Transaction<'tx>,
     layout: Layout,
     pub contents: BTreePage<'tx>,
     file_name: String,
@@ -34,14 +34,14 @@ impl std::fmt::Display for BTreeInternal<'_> {
 
 impl<'tx> BTreeInternal<'tx> {
     pub fn new(
-        txn: Transaction<'tx>,
+        tx: Transaction<'tx>,
         block_id: BlockId,
         layout: Layout,
         file_name: String,
     ) -> DbResult<Self> {
-        let contents = BTreePage::new(txn.clone(), block_id.clone(), layout.clone())?;
+        let contents = BTreePage::new(tx.clone(), block_id.clone(), layout.clone())?;
         Ok(Self {
-            txn,
+            tx,
             layout,
             contents,
             file_name,
@@ -55,7 +55,7 @@ impl<'tx> BTreeInternal<'tx> {
         let mut child_block = self.find_child_block(search_key)?;
         while !matches!(self.contents.get_flag()?, PageType::Internal(None)) {
             self.contents =
-                BTreePage::new(self.txn.clone(), child_block.clone(), self.layout.clone())?;
+                BTreePage::new(self.tx.clone(), child_block.clone(), self.layout.clone())?;
             child_block = self.find_child_block(search_key)?;
         }
         Ok(child_block.number() as usize)
@@ -95,7 +95,7 @@ impl<'tx> BTreeInternal<'tx> {
         }
         let child_block = self.find_child_block(&entry.dataval)?;
         let child_internal_node = BTreeInternal::new(
-            self.txn.clone(),
+            self.tx.clone(),
             child_block,
             self.layout.clone(),
             self.file_name.clone(),

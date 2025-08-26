@@ -16,7 +16,7 @@ use std::fmt;
 
 /// A B-tree implementation of the Index interface/
 pub struct BTreeIndex<'tx> {
-    txn: Transaction<'tx>,
+    tx: Transaction<'tx>,
     index_name: String,
     internal_layout: Layout,
     leaf_layout: Layout,
@@ -26,11 +26,11 @@ pub struct BTreeIndex<'tx> {
 }
 
 impl<'tx> BTreeIndex<'tx> {
-    pub fn new(txn: Transaction<'tx>, index_name: &str, leaf_layout: Layout) -> DbResult<Self> {
+    pub fn new(tx: Transaction<'tx>, index_name: &str, leaf_layout: Layout) -> DbResult<Self> {
         let leaf_table_name = format!("{}leaf", index_name);
-        if txn.size(&leaf_table_name)? == 0 {
-            let block_id = txn.append(&leaf_table_name)?;
-            let btree_page = BTreePage::new(txn.clone(), block_id, leaf_layout.clone())?;
+        if tx.size(&leaf_table_name)? == 0 {
+            let block_id = tx.append(&leaf_table_name)?;
+            let btree_page = BTreePage::new(tx.clone(), block_id, leaf_layout.clone())?;
             btree_page.format(PageType::Leaf(None))?;
         }
 
@@ -41,9 +41,9 @@ impl<'tx> BTreeIndex<'tx> {
         internal_schema.add_from_schema(IndexInfo::DATA_FIELD, leaf_layout.schema());
         let internal_layout = Layout::new(internal_schema.clone());
 
-        if txn.size(&internal_table_name)? == 0 {
-            let block_id = txn.append(&internal_table_name)?;
-            let internal_page = BTreePage::new(txn.clone(), block_id, internal_layout.clone())?;
+        if tx.size(&internal_table_name)? == 0 {
+            let block_id = tx.append(&internal_table_name)?;
+            let internal_page = BTreePage::new(tx.clone(), block_id, internal_layout.clone())?;
             internal_page.format(PageType::Internal(None))?;
 
             //  insert initial entry
@@ -55,7 +55,7 @@ impl<'tx> BTreeIndex<'tx> {
             internal_page.insert_internal(0, min_val, 0)?;
         }
         Ok(Self {
-            txn,
+            tx,
             index_name: index_name.to_string(),
             internal_layout,
             leaf_layout,
@@ -72,7 +72,7 @@ impl<'tx> fmt::Display for BTreeIndex<'tx> {
         writeln!(f, "Root block: {:?}", self.root_block)?;
         writeln!(f, "Leaf table: {}", self.leaf_table_name)?;
 
-        let tx = self.txn.clone();
+        let tx = self.tx.clone();
         let internal_cnt = tx.size(&self.root_block.file_name()).unwrap();
 
         for i in 0..internal_cnt {
@@ -108,7 +108,7 @@ impl<'tx> Index for BTreeIndex<'tx> {
     fn before_first(&mut self, search_key: &Constant) -> DbResult<()> {
         self.close();
         let mut root = BTreeInternal::new(
-            self.txn.clone(),
+            self.tx.clone(),
             self.root_block.clone(),
             self.internal_layout.clone(),
             self.root_block.file_name().to_string(),
@@ -117,7 +117,7 @@ impl<'tx> Index for BTreeIndex<'tx> {
         let leaf_block_id = BlockId::new(self.leaf_table_name.clone(), leaf_block_num as i32);
         self.leaf = Some(
             BTreeLeaf::new(
-                self.txn.clone(),
+                self.tx.clone(),
                 leaf_block_id.clone(),
                 self.leaf_layout.clone(),
                 search_key.clone(),
@@ -153,7 +153,7 @@ impl<'tx> Index for BTreeIndex<'tx> {
 
         let int_node_id = int_node_id.unwrap();
         let root = BTreeInternal::new(
-            self.txn.clone(),
+            self.tx.clone(),
             self.root_block.clone(),
             self.internal_layout.clone(),
             self.root_block.file_name().to_string(),
@@ -213,7 +213,7 @@ mod tests {
 
         // Verify internal node file exists with minimum value entry
         let root = BTreeInternal::new(
-            index.txn.clone(),
+            index.tx.clone(),
             index.root_block.clone(),
             index.internal_layout.clone(),
             index.root_block.file_name().to_string(),
