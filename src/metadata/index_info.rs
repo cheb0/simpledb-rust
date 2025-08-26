@@ -4,30 +4,24 @@ use crate::{
     tx::Transaction,
 };
 
-pub struct IndexInfo<'tx> {
+#[derive(Clone)]
+pub struct IndexInfo {
     index_name: String,
     field_name: String,
-    tx: Transaction<'tx>,
     table_schema: Schema,
     index_layout: Layout,
 }
 
-impl<'a> IndexInfo<'a> {
+impl IndexInfo {
     pub const BLOCK_NUM_FIELD: &'static str = "block"; //   the block number
     pub const ID_FIELD: &'static str = "id"; //  the record id (slot number)
     pub const DATA_FIELD: &'static str = "dataval"; //  the data field
 
-    pub fn new(
-        index_name: String,
-        field_name: String,
-        tx: Transaction<'a>,
-        table_schema: Schema,
-    ) -> IndexInfo<'a> {
+    pub fn new(index_name: String, field_name: String, table_schema: Schema) -> IndexInfo {
         let index_layout = IndexInfo::create_idx_layout(&field_name, &table_schema);
         Self {
             index_name,
             field_name,
-            tx,
             table_schema,
             index_layout,
         }

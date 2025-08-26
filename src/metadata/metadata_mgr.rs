@@ -45,7 +45,7 @@ impl MetadataMgr {
         &self,
         table_name: &str,
         tx: Transaction<'tx>,
-    ) -> DbResult<HashMap<String, IndexInfo<'tx>>> {
+    ) -> DbResult<HashMap<String, IndexInfo>> {
         self.index_mgr.get_index_info(table_name, tx)
     }
 }

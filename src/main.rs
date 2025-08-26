@@ -20,6 +20,13 @@ fn main() -> DbResult<()> {
 
     {
         let tx = db.new_tx()?;
+        db.metadata_mgr()
+            .create_index("id_index", "test_table", "id", tx.clone())?;
+        tx.commit()?;
+    }
+
+    {
+        let tx = db.new_tx()?;
         db.planner().execute_update(
             "insert into test_table(id, name, age) values(1, 'John', 25)",
             tx.clone(),

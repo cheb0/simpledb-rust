@@ -59,7 +59,7 @@ impl IndexMgr {
         &self,
         table_name: &str,
         tx: Transaction<'tx>,
-    ) -> DbResult<HashMap<String, IndexInfo<'tx>>> {
+    ) -> DbResult<HashMap<String, IndexInfo>> {
         let mut scan = TableScan::new(tx.clone(), IndexMgr::INDEX_TABLE, self.layout.clone())?;
         let mut result = HashMap::new();
         while scan.next()? {
@@ -70,7 +70,6 @@ impl IndexMgr {
                 let index_info = IndexInfo::new(
                     index_name,
                     field_name.clone(),
-                    tx.clone(),
                     table_layout.schema().clone(),
                 );
                 result.insert(field_name, index_info);

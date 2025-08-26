@@ -5,7 +5,12 @@ use crate::{
     index::Index,
     metadata::MetadataMgr,
     parse::{Parser, Statement},
-    plan::{Plan, project_plan::ProjectPlan, select_plan::SelectPlan, table_plan::TablePlan},
+    plan::{
+        Plan,
+        project_plan::ProjectPlan,
+        select_plan::SelectPlan,
+        table_plan::{TablePlan, TablePlanner},
+    },
     query::{Scan, UpdateScan},
     record::{Schema, TableScan},
     tx::Transaction,
@@ -45,7 +50,9 @@ impl Planner {
                 let mut plan: Box<dyn Plan> = Box::new(table_plan);
 
                 if let Some(pred) = predicate {
-                    plan = Box::new(SelectPlan::new(plan, pred));
+                    let table_planner =
+                        TablePlanner::new(table_name, pred, tx.clone(), &self.metadata_mgr)?;
+                    plan = table_planner.make_select_plan();
                 }
 
                 if !(fields.len() == 1 && fields[0] == "*") {
