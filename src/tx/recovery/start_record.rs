@@ -57,13 +57,15 @@ mod tests {
     fn test_start_record_serialization() -> crate::error::DbResult<()> {
         let record = StartRecord::create(789);
         let bytes = record.to_bytes()?;
-        
+
         let deserialized = create_log_record(&bytes)?;
-        
+
         assert_eq!(deserialized.op(), START_FLAG);
         assert_eq!(deserialized.tx_id(), 789);
-        
-        let start = (&*deserialized).as_any().downcast_ref::<StartRecord>()
+
+        let start = (&*deserialized)
+            .as_any()
+            .downcast_ref::<StartRecord>()
             .expect("Failed to downcast to StartRecord");
         assert_eq!(start.tx_id, 789);
         Ok(())

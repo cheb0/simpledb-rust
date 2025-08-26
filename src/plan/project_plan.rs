@@ -1,7 +1,7 @@
 use crate::plan::Plan;
 use crate::query::Scan;
-use crate::record::schema::Schema;
 use crate::query::project_scan::ProjectScan;
+use crate::record::schema::Schema;
 use crate::tx::Transaction;
 
 pub struct ProjectPlan {
@@ -16,7 +16,11 @@ impl ProjectPlan {
         for field in &fields {
             schema.add_from_schema(field, &plan.schema());
         }
-        ProjectPlan { plan, schema, fieldlist: fields }
+        ProjectPlan {
+            plan,
+            schema,
+            fieldlist: fields,
+        }
     }
 }
 

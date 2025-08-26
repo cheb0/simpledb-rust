@@ -12,4 +12,4 @@ pub trait UpdateScan: Scan {
     fn delete(&mut self) -> DbResult<()>;
     fn get_rid(&self) -> DbResult<RID>;
     fn move_to_rid(&mut self, rid: RID) -> DbResult<()>;
-} 
+}

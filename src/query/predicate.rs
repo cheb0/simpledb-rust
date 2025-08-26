@@ -12,9 +12,7 @@ pub struct Predicate {
 
 impl Predicate {
     pub fn new(term: Term) -> Self {
-        Predicate {
-            terms: vec![term],
-        }
+        Predicate { terms: vec![term] }
     }
 
     pub fn conjoin_with(mut self, other: Predicate) -> Self {

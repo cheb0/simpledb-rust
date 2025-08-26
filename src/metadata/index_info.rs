@@ -1,4 +1,7 @@
-use crate::{index::BTreeIndex, record::{schema::FieldType, Layout, Schema}, tx::Transaction};
+use crate::{
+    record::{Layout, Schema, schema::FieldType},
+    tx::Transaction,
+};
 
 pub struct IndexInfo<'tx> {
     index_name: String,
@@ -13,7 +16,12 @@ impl<'a> IndexInfo<'a> {
     pub const ID_FIELD: &'static str = "id"; //  the record id (slot number)
     pub const DATA_FIELD: &'static str = "dataval"; //  the data field
 
-    pub fn new(index_name: String, field_name: String, tx: Transaction<'a>, table_schema: Schema) -> IndexInfo<'a> {
+    pub fn new(
+        index_name: String,
+        field_name: String,
+        tx: Transaction<'a>,
+        table_schema: Schema,
+    ) -> IndexInfo<'a> {
         let index_layout = IndexInfo::create_idx_layout(&field_name, &table_schema);
         Self {
             index_name,

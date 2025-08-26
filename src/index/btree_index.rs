@@ -1,4 +1,15 @@
-use crate::{index::{btree_internal::BTreeInternal, btree_leaf::BTreeLeaf, btree_page::PageType, BTreePage, Index}, metadata::IndexInfo, query::Constant, record::{schema::FieldType, Layout, Schema, RID}, storage::BlockId, tx::Transaction, DbResult};
+use crate::{
+    DbResult,
+    index::{
+        BTreePage, Index, btree_internal::BTreeInternal, btree_leaf::BTreeLeaf,
+        btree_page::PageType,
+    },
+    metadata::IndexInfo,
+    query::Constant,
+    record::{Layout, RID, Schema, schema::FieldType},
+    storage::BlockId,
+    tx::Transaction,
+};
 use std::fmt;
 
 // Original implementation - https://github.com/redixhumayun/simpledb/blob/master/src/btree.rs
@@ -15,11 +26,7 @@ pub struct BTreeIndex<'tx> {
 }
 
 impl<'tx> BTreeIndex<'tx> {
-    pub fn new(
-        txn: Transaction<'tx>,
-        index_name: &str,
-        leaf_layout: Layout,
-    ) -> DbResult<Self> {
+    pub fn new(txn: Transaction<'tx>, index_name: &str, leaf_layout: Layout) -> DbResult<Self> {
         let leaf_table_name = format!("{}leaf", index_name);
         if txn.size(&leaf_table_name)? == 0 {
             let block_id = txn.append(&leaf_table_name)?;
@@ -33,12 +40,12 @@ impl<'tx> BTreeIndex<'tx> {
         internal_schema.add_from_schema(IndexInfo::BLOCK_NUM_FIELD, leaf_layout.schema());
         internal_schema.add_from_schema(IndexInfo::DATA_FIELD, leaf_layout.schema());
         let internal_layout = Layout::new(internal_schema.clone());
-        
+
         if txn.size(&internal_table_name)? == 0 {
             let block_id = txn.append(&internal_table_name)?;
             let internal_page = BTreePage::new(txn.clone(), block_id, internal_layout.clone())?;
             internal_page.format(PageType::Internal(None))?;
-            
+
             //  insert initial entry
             let field_type = internal_schema.field_type(IndexInfo::DATA_FIELD).unwrap();
             let min_val = match field_type {
@@ -64,17 +71,18 @@ impl<'tx> fmt::Display for BTreeIndex<'tx> {
         writeln!(f, "\n=== BTreeIndex: {} ===", self.index_name)?;
         writeln!(f, "Root block: {:?}", self.root_block)?;
         writeln!(f, "Leaf table: {}", self.leaf_table_name)?;
-        
+
         let tx = self.txn.clone();
         let internal_cnt = tx.size(&self.root_block.file_name()).unwrap();
 
         for i in 0..internal_cnt {
             let page = BTreeInternal::new(
-                tx.clone(), 
-                BlockId::new(self.root_block.file_name().to_string(), i), 
-                self.internal_layout.clone(), 
-                self.root_block.file_name().to_string()
-            ).unwrap();
+                tx.clone(),
+                BlockId::new(self.root_block.file_name().to_string(), i),
+                self.internal_layout.clone(),
+                self.root_block.file_name().to_string(),
+            )
+            .unwrap();
             writeln!(f, "{}", page)?;
         }
 
@@ -86,8 +94,9 @@ impl<'tx> fmt::Display for BTreeIndex<'tx> {
                 BlockId::new(self.leaf_table_name.clone(), i),
                 self.leaf_layout.clone(),
                 Constant::Int(-1),
-                self.leaf_table_name.to_string()
-            ).unwrap();
+                self.leaf_table_name.to_string(),
+            )
+            .unwrap();
             writeln!(f, "{}", page)?;
         }
 
@@ -174,10 +183,13 @@ impl<'tx> Index for BTreeIndex<'tx> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashMap, HashSet};
-    use rand::{seq::SliceRandom, Rng};
-    use crate::{utils::testing_utils::{temp_db, temp_db_with_cfg}, SimpleDB};
     use super::*;
+    use crate::{
+        SimpleDB,
+        utils::testing_utils::{temp_db, temp_db_with_cfg},
+    };
+    use rand::{Rng, seq::SliceRandom};
+    use std::collections::{HashMap, HashSet};
 
     fn create_test_layout() -> Layout {
         let mut schema = Schema::new();
@@ -207,10 +219,7 @@ mod tests {
             index.root_block.file_name().to_string(),
         )?;
         assert_eq!(root.contents.get_number_of_recs()?, 1);
-        assert_eq!(
-            root.contents.get_data_value(0)?,
-            Constant::Int(i32::MIN)
-        );
+        assert_eq!(root.contents.get_data_value(0)?, Constant::Int(i32::MIN));
         Ok(())
     }
 
@@ -322,10 +331,10 @@ mod tests {
 
         for (i, &key) in keys.iter().enumerate() {
             index.before_first(&Constant::Int(key))?;
-            
+
             if index.next()? {
                 let rid = index.get_data_rid()?;
-                
+
                 let expected_rid = RID::new((i / 100) as i32, i % 100);
                 assert_eq!(rid, expected_rid, "RID mismatch for key {}", key);
             } else {
@@ -334,7 +343,10 @@ mod tests {
         }
 
         if !missing_keys.is_empty() {
-            println!("Missing keys: {:?}", &missing_keys[..std::cmp::min(50, missing_keys.len())]);
+            println!(
+                "Missing keys: {:?}",
+                &missing_keys[..std::cmp::min(50, missing_keys.len())]
+            );
             if missing_keys.len() > 50 {
                 println!("... and {} more", missing_keys.len() - 50);
             }
@@ -342,8 +354,12 @@ mod tests {
         assert!(missing_keys.is_empty(), "No keys should be missing");
 
         let non_existent_keys = vec![
-            -1, -100, -1000,
-            NUM_KEYS as i32, (NUM_KEYS + 100) as i32, (NUM_KEYS + 1000) as i32,
+            -1,
+            -100,
+            -1000,
+            NUM_KEYS as i32,
+            (NUM_KEYS + 100) as i32,
+            (NUM_KEYS + 1000) as i32,
         ];
         for &key in &non_existent_keys {
             index.before_first(&Constant::Int(key))?;
@@ -378,10 +394,10 @@ mod tests {
 
         for (i, &key) in keys.iter().enumerate() {
             index.before_first(&Constant::Int(key))?;
-            
+
             if index.next()? {
                 let rid = index.get_data_rid()?;
-                
+
                 let expected_rid = RID::new((i / 100) as i32, i % 100);
                 assert_eq!(rid, expected_rid, "RID mismatch for key {}", key);
             } else {
@@ -396,7 +412,7 @@ mod tests {
 
         for (i, &key) in keys.iter().enumerate() {
             index.before_first(&Constant::Int(key))?;
-            
+
             if keys_to_delete.contains(&key) {
                 assert!(!index.next().unwrap(), "Should never find a deleted entry");
             } else {
@@ -429,7 +445,7 @@ mod tests {
         for i in 0..NUM_KEYS {
             let key = i as i32;
             index.before_first(&Constant::Int(key))?;
-            
+
             if index.next()? {
                 let rid = index.get_data_rid()?;
                 let expected_rid = RID::new((i / 100) as i32, i % 100);

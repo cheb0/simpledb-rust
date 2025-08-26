@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{error::DbResult, tx::Transaction};
 
-use super::log_record::{LogRecord, COMMIT_FLAG};
+use super::log_record::{COMMIT_FLAG, LogRecord};
 
 /// A commit transaction log record.
 #[derive(Serialize, Deserialize)]
@@ -17,7 +17,7 @@ impl CommitRecord {
     pub fn new(tx_id: i32) -> Self {
         CommitRecord { tx_id }
     }
-    
+
     pub fn to_bytes(&self) -> DbResult<Vec<u8>> {
         let mut result = vec![COMMIT_FLAG as u8];
         result.extend(serialize(self)?);
@@ -52,13 +52,15 @@ mod tests {
     fn test_commit_record_serialization() -> crate::error::DbResult<()> {
         let record = CommitRecord::new(123);
         let bytes = record.to_bytes()?;
-        
+
         let deserialized = create_log_record(&bytes)?;
-        
+
         assert_eq!(deserialized.op(), COMMIT_FLAG);
         assert_eq!(deserialized.tx_id(), 123);
-        
-        let commit = (&*deserialized).as_any().downcast_ref::<CommitRecord>()
+
+        let commit = (&*deserialized)
+            .as_any()
+            .downcast_ref::<CommitRecord>()
             .expect("Failed to downcast to CommitRecord");
         assert_eq!(commit.tx_id, 123);
         Ok(())

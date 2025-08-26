@@ -1,4 +1,4 @@
-use crate::{query::Constant, record::RID, DbResult};
+use crate::{DbResult, query::Constant, record::RID};
 
 pub trait Index {
     /// Position the index before the first record having the specified search key

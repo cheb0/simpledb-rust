@@ -25,7 +25,7 @@ impl LogMgr {
         let block_size = storage_mgr.block_size();
         let mut log_page = Page::new(block_size);
         log_page.set_int(0, storage_mgr.block_size() as i32);
-        
+
         let block_cnt = storage_mgr.block_cnt(log_file)?;
         let current_blk = if block_cnt == 0 {
             Self::append_new_block(&*storage_mgr, log_file)?
@@ -34,7 +34,7 @@ impl LogMgr {
             storage_mgr.read(&blk, &mut log_page)?;
             blk
         };
-        
+
         Ok(LogMgr {
             storage_mgr,
             log_file: log_file.to_string(),
@@ -46,7 +46,7 @@ impl LogMgr {
             }),
         })
     }
-    
+
     // Helper method to append a new block to the log file
     fn append_new_block(fm: &dyn StorageMgr, log_file: &str) -> io::Result<BlockId> {
         let blk = fm.append(log_file)?;
@@ -56,10 +56,11 @@ impl LogMgr {
         fm.write(&blk, &logpage)?;
         Ok(blk)
     }
-    
+
     /// Writes the current log page to disk.
     fn flush_internal(&self, inner: &mut LogMgrInner) -> io::Result<()> {
-        self.storage_mgr.write(&inner.current_blk, &inner.log_page)?;
+        self.storage_mgr
+            .write(&inner.current_blk, &inner.log_page)?;
         inner.last_saved_lsn = inner.latest_lsn;
         Ok(())
     }
@@ -71,45 +72,47 @@ impl LogMgr {
         }
         Ok(())
     }
-    
+
     /// Appends a log record to the log.
     /// Returns the LSN (Log Sequence Number) of the appended record.
     /// This method is thread-safe.
     pub fn append(&self, record: &[u8]) -> io::Result<i32> {
         let mut inner = self.inner.lock().unwrap();
-        
+
         let boundary = inner.log_page.get_int(0);
-        
+
         let rec_size: usize = record.len();
         let bytes_needed = rec_size + std::mem::size_of::<i32>();
-        
+
         // Check if there's enough space in the current block
         if (boundary - bytes_needed as i32) < std::mem::size_of::<i32>() as i32 {
             self.flush_internal(&mut inner)?;
-            
+
             inner.current_blk = Self::append_new_block(&*self.storage_mgr, &self.log_file)?;
             inner.log_page = Page::new(self.storage_mgr.block_size());
-            inner.log_page.set_int(0, self.storage_mgr.block_size() as i32);
+            inner
+                .log_page
+                .set_int(0, self.storage_mgr.block_size() as i32);
             let boundary = inner.log_page.get_int(0);
             let recpos = boundary - bytes_needed as i32;
-            
+
             // Write the record and update the boundary
             inner.log_page.set_bytes(recpos as usize, record);
             inner.log_page.set_int(0, recpos);
         } else {
             // Calculate position for the new record
             let recpos = boundary - bytes_needed as i32;
-            
+
             // Write the record and update the boundary
             inner.log_page.set_bytes(recpos as usize, record);
             inner.log_page.set_int(0, recpos);
         }
-        
+
         inner.latest_lsn += 1;
-        
+
         Ok(inner.latest_lsn)
     }
-    
+
     /// Returns an iterator over all log records, starting with the most recent.
     pub fn iterator(&self) -> io::Result<LogIterator> {
         let mut inner = self.inner.lock().unwrap();
@@ -140,28 +143,28 @@ impl<'a> LogIterator<'a> {
         iter.move_to_block(&blk)?;
         Ok(iter)
     }
-    
+
     fn move_to_block(&mut self, blk: &BlockId) -> io::Result<()> {
         self.storage_mgr.read(blk, &mut self.page)?;
         self.boundary = self.page.get_int(0) as usize;
         self.current_pos = self.boundary;
         Ok(())
     }
-    
+
     pub fn has_next(&self) -> bool {
         self.current_pos < self.storage_mgr.block_size() || self.blk.number() > 0
     }
-    
+
     pub fn next(&mut self) -> io::Result<Vec<u8>> {
         if self.current_pos == self.storage_mgr.block_size() {
             let new_blk = BlockId::new(self.blk.file_name().to_string(), self.blk.number() - 1);
             self.blk = new_blk.clone();
             self.move_to_block(&new_blk)?;
         }
-        
+
         let record_bytes = self.page.get_bytes(self.current_pos);
         self.current_pos += std::mem::size_of::<i32>() + record_bytes.len();
-        
+
         Ok(record_bytes)
     }
 }
@@ -198,9 +201,13 @@ mod tests {
 
         fn new_with_block_size(block_size: usize) -> DbResult<Self> {
             let temp_dir = TempDir::new().unwrap();
-            let storage_mgr: Arc<dyn StorageMgr> = Arc::new(FileStorageMgr::new(temp_dir.path(), block_size)?);
-            let log_mgr = Arc::new(LogMgr::new(Arc::clone(&storage_mgr) as Arc<dyn StorageMgr>, "testlog")?);
-            
+            let storage_mgr: Arc<dyn StorageMgr> =
+                Arc::new(FileStorageMgr::new(temp_dir.path(), block_size)?);
+            let log_mgr = Arc::new(LogMgr::new(
+                Arc::clone(&storage_mgr) as Arc<dyn StorageMgr>,
+                "testlog",
+            )?);
+
             Ok(TestEnvironment {
                 _temp_dir: temp_dir,
                 storage_mgr,
@@ -212,25 +219,25 @@ mod tests {
     #[test]
     fn test_log_manager_basic() -> DbResult<()> {
         let env = TestEnvironment::new()?;
-        
+
         let test_record = b"This is a test log record";
         let lsn = env.log_mgr.append(test_record)?;
         assert_eq!(lsn, 1); // First LSN should be 1
-        
+
         // Retrieve the record using an iterator
         let mut iter = env.log_mgr.iterator()?;
         assert!(iter.has_next());
         let retrieved_rec: Vec<u8> = iter.next()?;
         assert_eq!(retrieved_rec, test_record);
         assert!(!iter.has_next());
-        
+
         Ok(())
     }
-    
+
     #[test]
     fn test_log_manager_multiple_records() -> DbResult<()> {
         let env = TestEnvironment::new()?;
-        
+
         let records = vec![
             b"First log record".to_vec(),
             b"Second log record".to_vec(),
@@ -238,59 +245,59 @@ mod tests {
             b"Fourth log record".to_vec(),
             b"Fifth log record".to_vec(),
         ];
-        
+
         let mut lsns = Vec::new();
         for rec in &records {
             let lsn = env.log_mgr.append(rec)?;
             lsns.push(lsn);
         }
-        
+
         for (i, lsn) in lsns.iter().enumerate() {
             assert_eq!(*lsn, (i + 1) as i32);
         }
-        
+
         let mut iter = env.log_mgr.iterator()?;
         let mut retrieved_records = Vec::new();
-        
+
         while iter.has_next() {
             retrieved_records.push(iter.next()?);
         }
-        
+
         // Records should be in reverse order (newest first)
         retrieved_records.reverse();
         assert_eq!(retrieved_records, records);
-        
+
         Ok(())
     }
-    
+
     #[test]
     fn test_log_manager_block_boundary() -> DbResult<()> {
         let env = TestEnvironment::new_with_block_size(100)?;
-        
+
         let mut records = Vec::new();
         for i in 0..1000 {
             let rec = format!("Record #{}", i).into_bytes();
             records.push(rec);
         }
-        
+
         for rec in &records {
             env.log_mgr.append(rec)?;
         }
-        
+
         let mut iter = env.log_mgr.iterator()?;
         let mut retrieved_records = Vec::new();
-        
+
         while iter.has_next() {
             retrieved_records.push(iter.next()?);
         }
-        
+
         // Records should be in reverse order (newest first)
         retrieved_records.reverse();
         assert_eq!(retrieved_records, records);
-        
+
         Ok(())
     }
-    
+
     #[test]
     fn test_log_manager_persistence() -> DbResult<()> {
         let env = TestEnvironment::new()?;
@@ -299,39 +306,39 @@ mod tests {
             b"Second log record".to_vec(),
             b"Third log record".to_vec(),
         ];
-        
+
         // First session: create log manager and append records
         {
             let log_mgr = LogMgr::new(Arc::clone(&env.storage_mgr), "testlog")?;
-            
+
             for rec in &records {
                 log_mgr.append(rec)?;
-            }            
+            }
             // LogMgr will be dropped here, which should flush any pending changes
         }
-        
+
         // Second session: create a new log manager and read the records
         {
             let log_mgr = LogMgr::new(Arc::clone(&env.storage_mgr), "testlog")?;
-            
+
             // Retrieve records using an iterator
             let mut iter: LogIterator<'_> = log_mgr.iterator()?;
             let mut retrieved_records = Vec::new();
-            
+
             while iter.has_next() {
                 retrieved_records.push(iter.next()?);
             }
             retrieved_records.reverse();
             assert_eq!(retrieved_records, records);
         }
-        
+
         Ok(())
     }
 
     #[test]
     fn test_log_manager_thread_safety() -> DbResult<()> {
-        use std::thread;
         use std::sync::{Arc, Barrier};
+        use std::thread;
 
         let env = TestEnvironment::new_with_block_size(4096)?;
 
@@ -356,7 +363,7 @@ mod tests {
                         Err(e) => panic!("Error appending record: {}", e),
                     }
                 }
-                
+
                 lsns
             });
 
@@ -374,7 +381,7 @@ mod tests {
         for (i, (_, lsn)) in all_records.iter().enumerate() {
             assert_eq!(*lsn, (i + 1) as i32);
         }
-        
+
         let mut iter = env.log_mgr.iterator()?;
         let mut retrieved_records = Vec::new();
 
@@ -391,4 +398,4 @@ mod tests {
 
         Ok(())
     }
-} 
+}

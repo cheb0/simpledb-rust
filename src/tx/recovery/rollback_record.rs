@@ -57,13 +57,15 @@ mod tests {
     fn test_rollback_record_serialization() -> crate::error::DbResult<()> {
         let record = RollbackRecord::create(42);
         let bytes = record.to_bytes()?;
-        
+
         let deserialized = create_log_record(&bytes)?;
-        
+
         assert_eq!(deserialized.op(), ROLLBACK_FLAG);
         assert_eq!(deserialized.tx_id(), 42);
-        
-        let rollback = (&*deserialized).as_any().downcast_ref::<RollbackRecord>()
+
+        let rollback = (&*deserialized)
+            .as_any()
+            .downcast_ref::<RollbackRecord>()
             .expect("Failed to downcast to RollbackRecord");
         assert_eq!(rollback.tx_id, 42);
         Ok(())

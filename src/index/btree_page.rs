@@ -1,4 +1,11 @@
-use crate::{metadata::IndexInfo, query::Constant, record::{schema::FieldType, Layout, RID}, storage::BlockId, tx::Transaction, DbResult};
+use crate::{
+    DbResult,
+    metadata::IndexInfo,
+    query::Constant,
+    record::{Layout, RID, schema::FieldType},
+    storage::BlockId,
+    tx::Transaction,
+};
 
 // Original implementation - https://github.com/redixhumayun/simpledb/blob/master/src/btree.rs
 
@@ -102,7 +109,7 @@ impl<'tx> BTreePage<'tx> {
     /// This method splits the existing [BTreePage] and moves the records from [slot..]
     /// into a new page and then returns the [BlockId] of the new page
     /// The current page continues to be the same, but with fewer records
-    pub fn split(&self, slot: usize, page_type: PageType) -> DbResult<BlockId> { 
+    pub fn split(&self, slot: usize, page_type: PageType) -> DbResult<BlockId> {
         let block_id = self.tx.append(&self.block_id.file_name())?;
         let new_btree_page =
             BTreePage::new(self.tx.clone(), block_id.clone(), self.layout.clone())?;
@@ -178,12 +185,7 @@ impl<'tx> BTreePage<'tx> {
 
     /// Inserts a directory entry at the specified slot (for internal nodes)
     /// Directory entries contain a data value and child block number
-    pub fn insert_internal(
-        &self,
-        slot: usize,
-        value: Constant,
-        block_num: usize,
-    ) -> DbResult<()> {
+    pub fn insert_internal(&self, slot: usize, value: Constant, block_num: usize) -> DbResult<()> {
         self.insert(slot)?;
         self.set_value(slot, IndexInfo::DATA_FIELD, value)?;
         self.set_int(slot, IndexInfo::BLOCK_NUM_FIELD, block_num as i32)?;
@@ -267,12 +269,7 @@ impl<'tx> BTreePage<'tx> {
         )
     }
 
-    fn set_string(
-        &self,
-        slot: usize,
-        field_name: &str,
-        value: String,
-    ) -> DbResult<()> {
+    fn set_string(&self, slot: usize, field_name: &str, value: String) -> DbResult<()> {
         self.tx.set_string(
             &self.block_id,
             self.field_position(slot, field_name),
@@ -300,12 +297,7 @@ impl<'tx> BTreePage<'tx> {
         }
     }
 
-    fn set_value(
-        &self,
-        slot: usize,
-        field_name: &str,
-        value: Constant,
-    ) -> DbResult<()> {
+    fn set_value(&self, slot: usize, field_name: &str, value: Constant) -> DbResult<()> {
         let expected_type = self
             .layout
             .schema()
@@ -377,7 +369,10 @@ impl std::fmt::Display for BTreePage<'_> {
                                 writeln!(
                                     f,
                                     "Slot {}: Key={:?}, RID=(block={}, slot={})",
-                                    slot, key, rid.block_number(), rid.slot()
+                                    slot,
+                                    key,
+                                    rid.block_number(),
+                                    rid.slot()
                                 )?;
                             }
                         }
@@ -524,18 +519,9 @@ mod tests {
         page.insert_leaf(1, Constant::Int(20), RID::new(1, 2))?;
         page.insert_leaf(2, Constant::Int(30), RID::new(1, 3))?;
 
-        assert_eq!(
-            page.find_slot_before(&Constant::Int(15))?.unwrap(),
-            0
-        );
-        assert_eq!(
-            page.find_slot_before(&Constant::Int(20))?.unwrap(),
-            0
-        );
-        assert_eq!(
-            page.find_slot_before(&Constant::Int(25))?.unwrap(),
-            1
-        );
+        assert_eq!(page.find_slot_before(&Constant::Int(15))?.unwrap(), 0);
+        assert_eq!(page.find_slot_before(&Constant::Int(20))?.unwrap(), 0);
+        assert_eq!(page.find_slot_before(&Constant::Int(25))?.unwrap(), 1);
         Ok(())
     }
 }

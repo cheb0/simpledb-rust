@@ -1,6 +1,6 @@
-use crate::query::scan::Scan;
 use crate::DbResult;
 use crate::error::DbError;
+use crate::query::scan::Scan;
 
 use super::Constant;
 
@@ -13,7 +13,10 @@ pub struct ProjectScan<'a> {
 
 impl<'a> ProjectScan<'a> {
     pub fn new(s: Box<dyn Scan + 'a>, field_names: Vec<String>) -> Self {
-        ProjectScan { scan: s, fields: field_names }
+        ProjectScan {
+            scan: s,
+            fields: field_names,
+        }
     }
 
     fn has_field(&self, field_name: &str) -> bool {
@@ -53,7 +56,7 @@ impl<'a> Scan for ProjectScan<'a> {
             Err(DbError::FieldNotFound(field_name.to_string()))
         }
     }
-    
+
     fn has_field(&self, field_name: &str) -> bool {
         self.fields.iter().any(|f| f == field_name)
     }

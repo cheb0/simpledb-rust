@@ -1,7 +1,7 @@
 use crate::error::DbResult;
+use crate::index::Index;
 use crate::query::{Constant, Scan, UpdateScan};
 use crate::record::TableScan;
-use crate::index::Index;
 
 /// `IndexSelectScan` uses an index to efficiently find records matching a specific value.
 /// It combines an index scan with a table scan to retrieve the actual record data.
@@ -74,63 +74,63 @@ impl<'tx> Scan for IndexSelectScan<'tx> {
 mod tests {
     use super::*;
     use crate::{
-        record::{schema::Schema, layout::Layout},
-        utils::testing_utils::temp_db,
         index::BTreeIndex,
         metadata::IndexInfo,
+        record::{layout::Layout, schema::Schema},
+        utils::testing_utils::temp_db,
     };
 
     #[test]
     fn test_index_select_scan_basic() -> DbResult<()> {
         let db = temp_db()?;
-        
+
         let mut schema = Schema::new();
         schema.add_int_field("id");
         schema.add_string_field("name", 20);
         schema.add_int_field("age");
         let layout = Layout::new(schema);
-        
+
         let tx = db.new_tx()?;
-        
+
         let index_layout = IndexInfo::create_idx_layout("age", layout.schema());
         let mut index = BTreeIndex::new(tx.clone(), "age_idx", index_layout)?;
-        
+
         let mut scan = TableScan::new(tx.clone(), "test_table", layout.clone())?;
         scan.insert()?;
         scan.set_int("id", 1)?;
         scan.set_string("name", "Alice")?;
         scan.set_int("age", 25)?;
         let rid1 = scan.get_rid()?;
-        
+
         scan.insert()?;
         scan.set_int("id", 2)?;
         scan.set_string("name", "Bob")?;
         scan.set_int("age", 30)?;
         let rid2 = scan.get_rid()?;
-        
+
         scan.insert()?;
         scan.set_int("id", 3)?;
         scan.set_string("name", "Charlie")?;
         scan.set_int("age", 25)?;
         let rid3 = scan.get_rid()?;
-        
+
         // Insert into index
         index.insert(&Constant::int(25), &rid1)?;
         index.insert(&Constant::int(30), &rid2)?;
         index.insert(&Constant::int(25), &rid3)?;
-        
+
         // Create index select scan for age = 25
         let mut index_scan = IndexSelectScan::new(
             TableScan::new(tx.clone(), "test_table", layout.clone())?,
             Box::new(index),
             Constant::int(25),
         )?;
-        
+
         // Should find 2 records with age = 25
         let mut count = 0;
         let mut ages = Vec::new();
         let mut names = Vec::new();
-        
+
         while index_scan.next()? {
             count += 1;
             let age = index_scan.get_int("age")?;
@@ -138,12 +138,12 @@ mod tests {
             ages.push(age);
             names.push(name);
         }
-        
+
         assert_eq!(count, 2, "Should find 2 records with age = 25");
         assert_eq!(ages, vec![25, 25]);
         assert!(names.contains(&"Alice".to_string()));
         assert!(names.contains(&"Charlie".to_string()));
-        
+
         index_scan.close();
         tx.commit()?;
         Ok(())
@@ -152,51 +152,51 @@ mod tests {
     #[test]
     fn test_index_select_scan_string_field() -> DbResult<()> {
         let db = temp_db()?;
-        
+
         let mut schema = Schema::new();
         schema.add_int_field("id");
         schema.add_string_field("name", 20);
         schema.add_int_field("age");
         let layout = Layout::new(schema);
-        
+
         let tx = db.new_tx()?;
-        
+
         let index_layout = IndexInfo::create_idx_layout("name", layout.schema());
         let mut index = BTreeIndex::new(tx.clone(), "name_idx", index_layout)?;
-        
+
         let mut scan = TableScan::new(tx.clone(), "test_table", layout.clone())?;
         scan.insert()?;
         scan.set_int("id", 1)?;
         scan.set_string("name", "Alice")?;
         scan.set_int("age", 25)?;
         let rid1 = scan.get_rid()?;
-        
+
         scan.insert()?;
         scan.set_int("id", 2)?;
         scan.set_string("name", "Bob")?;
         scan.set_int("age", 30)?;
         let rid2 = scan.get_rid()?;
-        
+
         scan.insert()?;
         scan.set_int("id", 3)?;
         scan.set_string("name", "Alice")?;
         scan.set_int("age", 35)?;
         let rid3 = scan.get_rid()?;
-        
+
         index.insert(&Constant::string("Alice"), &rid1)?;
         index.insert(&Constant::string("Bob"), &rid2)?;
         index.insert(&Constant::string("Alice"), &rid3)?;
-        
+
         let mut index_scan = IndexSelectScan::new(
             TableScan::new(tx.clone(), "test_table", layout.clone())?,
             Box::new(index),
             Constant::string("Alice"),
         )?;
-        
+
         let mut count = 0;
         let mut names = Vec::new();
         let mut ages = Vec::new();
-        
+
         while index_scan.next()? {
             count += 1;
             let name = index_scan.get_string("name")?;
@@ -204,10 +204,10 @@ mod tests {
             names.push(name);
             ages.push(age);
         }
-        
+
         assert_eq!(count, 2, "Should find 2 records with name = 'Alice'");
         assert_eq!(names, vec!["Alice", "Alice"]);
-        
+
         index_scan.close();
         tx.commit()?;
         Ok(())
@@ -216,42 +216,42 @@ mod tests {
     #[test]
     fn test_index_select_scan_no_matches() -> DbResult<()> {
         let db = temp_db()?;
-        
+
         let mut schema = Schema::new();
         schema.add_int_field("id");
         schema.add_string_field("name", 20);
         schema.add_int_field("age");
         let layout = Layout::new(schema);
-        
+
         let tx = db.new_tx()?;
-        
+
         let index_layout = IndexInfo::create_idx_layout("age", layout.schema());
         let mut index = BTreeIndex::new(tx.clone(), "age_idx", index_layout)?;
-        
+
         let mut scan = TableScan::new(tx.clone(), "test_table", layout.clone())?;
         scan.insert()?;
         scan.set_int("id", 1)?;
         scan.set_string("name", "Alice")?;
         scan.set_int("age", 25)?;
         let rid = scan.get_rid()?;
-        
+
         index.insert(&Constant::int(25), &rid)?;
-        
+
         let mut index_scan = IndexSelectScan::new(
             TableScan::new(tx.clone(), "test_table", layout.clone())?,
             Box::new(index),
             Constant::int(99),
         )?;
-        
+
         let mut count = 0;
         while index_scan.next()? {
             count += 1;
         }
-        
+
         assert_eq!(count, 0, "Should find no records with age = 99");
-        
+
         index_scan.close();
         tx.commit()?;
         Ok(())
     }
-} 
+}

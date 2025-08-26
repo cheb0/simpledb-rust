@@ -38,7 +38,8 @@ impl Schema {
 
     pub fn add_field(&mut self, field_name: &str, field_type: FieldType, length: usize) {
         self.fields.push(field_name.to_string());
-        self.info.insert(field_name.to_string(), FieldInfo { field_type, length });
+        self.info
+            .insert(field_name.to_string(), FieldInfo { field_type, length });
     }
 
     pub fn add_int_field(&mut self, field_name: &str) {
@@ -50,13 +51,11 @@ impl Schema {
     }
 
     pub fn add_from_schema(&mut self, field_name: &str, other: &Schema) {
-        let field_info = other.info.get(field_name)
+        let field_info = other
+            .info
+            .get(field_name)
             .expect("Field not found in schema");
-        self.add_field(
-            field_name,
-            field_info.field_type,
-            field_info.length,
-        );
+        self.add_field(field_name, field_info.field_type, field_info.length);
     }
 
     pub fn add_all(&mut self, other: &Schema) {
@@ -89,7 +88,7 @@ mod tests {
     #[test]
     fn test_schema_basic() {
         let mut schema = Schema::new();
-        
+
         schema.add_int_field("id");
         schema.add_string_field("name", 20);
 

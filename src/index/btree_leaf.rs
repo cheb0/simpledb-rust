@@ -1,4 +1,14 @@
-use crate::{index::{btree_page::{InternalNodeEntry, PageType}, BTreePage}, query::Constant, record::{Layout, RID}, storage::BlockId, tx::Transaction, DbResult};
+use crate::{
+    DbResult,
+    index::{
+        BTreePage,
+        btree_page::{InternalNodeEntry, PageType},
+    },
+    query::Constant,
+    record::{Layout, RID},
+    storage::BlockId,
+    tx::Transaction,
+};
 
 // Original implementation - https://github.com/redixhumayun/simpledb/blob/master/src/btree.rs
 
@@ -185,7 +195,7 @@ impl<'tx> BTreeLeaf<'tx> {
 
 #[cfg(test)]
 mod btree_leaf_tests {
-    use crate::{metadata::IndexInfo, record::Schema, utils::testing_utils::temp_db, SimpleDB};
+    use crate::{SimpleDB, metadata::IndexInfo, record::Schema, utils::testing_utils::temp_db};
 
     use super::*;
 
@@ -197,7 +207,10 @@ mod btree_leaf_tests {
         Layout::new(schema)
     }
 
-    fn setup_leaf<'tx>(db: &'tx SimpleDB, search_key: Constant) -> DbResult<(Transaction<'tx>, BTreeLeaf<'tx>)> {
+    fn setup_leaf<'tx>(
+        db: &'tx SimpleDB,
+        search_key: Constant,
+    ) -> DbResult<(Transaction<'tx>, BTreeLeaf<'tx>)> {
         let tx = db.new_tx()?;
         let block = tx.append("testfile")?;
         let layout = create_test_layout();
@@ -310,7 +323,7 @@ mod btree_leaf_tests {
     #[test]
     fn test_insert_edge_cases() -> DbResult<()> {
         let db = temp_db()?;
-        
+
         // Test case 1: Insert when split point equals first key
         let (_, mut leaf) = setup_leaf(&db, Constant::Int(10))?;
         // Fill page with alternating 10s and 20s

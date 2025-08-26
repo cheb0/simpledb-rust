@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{error::DbResult, tx::Transaction};
 
-use super::log_record::{LogRecord, CHECKPOINT_FLAG};
+use super::log_record::{CHECKPOINT_FLAG, LogRecord};
 
 #[derive(Serialize, Deserialize)]
 pub struct CheckpointRecord {}
@@ -49,13 +49,15 @@ mod tests {
     fn test_checkpoint_record_serialization() -> crate::error::DbResult<()> {
         let record = CheckpointRecord {};
         let bytes = record.to_bytes()?;
-        
+
         let deserialized = create_log_record(&bytes)?;
-        
+
         assert_eq!(deserialized.op(), CHECKPOINT_FLAG);
         assert_eq!(deserialized.tx_id(), -1);
-        
-        (&*deserialized).as_any().downcast_ref::<CheckpointRecord>()
+
+        (&*deserialized)
+            .as_any()
+            .downcast_ref::<CheckpointRecord>()
             .expect("Failed to downcast to CheckpointRecord");
 
         Ok(())

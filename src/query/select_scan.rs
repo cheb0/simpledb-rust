@@ -1,5 +1,5 @@
 use crate::error::DbResult;
-use crate::query::{Scan, Predicate, Constant};
+use crate::query::{Constant, Predicate, Scan};
 
 /// A scan that filters records based on a predicate.
 pub struct SelectScan<'a> {
@@ -91,7 +91,7 @@ mod tests {
     #[test]
     fn test_select_scan() -> DbResult<()> {
         let db = temp_db()?;
-        
+
         let mut schema = Schema::new();
         schema.add_int_field("id");
         schema.add_string_field("name", 20);
@@ -99,15 +99,15 @@ mod tests {
         let tx = db.new_tx()?;
 
         let mut table_scan = TableScan::new(tx.clone(), "test_table", layout)?;
-        
+
         table_scan.insert()?;
         table_scan.set_int("id", 1)?;
         table_scan.set_string("name", "Alice")?;
-        
+
         table_scan.insert()?;
         table_scan.set_int("id", 2)?;
         table_scan.set_string("name", "Bob")?;
-        
+
         table_scan.insert()?;
         table_scan.set_int("id", 3)?;
         table_scan.set_string("name", "Charlie")?;
@@ -115,29 +115,29 @@ mod tests {
         // Create predicate: id = 1
         let pred = Predicate::new(Term::new(
             Expr::field_name("id"),
-            Expr::constant(Constant::Int(1))
+            Expr::constant(Constant::Int(1)),
         ));
 
         let mut select_scan = SelectScan::new(Box::new(table_scan), pred);
 
         select_scan.before_first()?;
-        
+
         // Should only get records with id = 1
         let mut count = 0;
         while select_scan.next()? {
             count += 1;
             let id = select_scan.get_int("id")?;
             let name = select_scan.get_string("name")?;
-            
+
             assert_eq!(id, 1, "Filtered record should have id > 1");
-            
+
             match id {
                 1 => assert_eq!(name, "Alice"),
                 _ => panic!("Unexpected ID: {}", id),
             }
         }
         assert_eq!(count, 1, "Should have found one record with id = 1");
-        
+
         select_scan.close();
         tx.commit()?;
 

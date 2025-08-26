@@ -29,9 +29,7 @@ pub struct MemStorageMgrConfig {
 
 impl MemStorageMgrConfig {
     pub fn new() -> Self {
-        Self {
-            block_size: 4096,
-        }
+        Self { block_size: 4096 }
     }
 
     pub fn block_size(mut self, block_size: usize) -> Self {
@@ -116,7 +114,7 @@ impl Config {
         self.log_file_name = log_file.into();
         self
     }
-    
+
     pub fn log_file_path(&self) -> PathBuf {
         match &self.storage_mgr {
             StorageMgrConfig::File(config) => config.db_directory.join(&self.log_file_name),
