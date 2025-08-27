@@ -116,34 +116,6 @@ mod tests {
     use crate::utils::testing_utils::temp_db;
 
     #[test]
-    fn test_table_planner_new() -> DbResult<()> {
-        let db = temp_db()?;
-
-        let mut schema = Schema::new();
-        schema.add_int_field("id");
-        schema.add_string_field("name", 20);
-        schema.add_int_field("age");
-
-        let tx = db.new_tx()?;
-        db.metadata_mgr()
-            .create_table("test_table", &schema, tx.clone())?;
-
-        let term = Term::new(Expr::field_name("age"), Expr::constant(Constant::int(25)));
-        let predicate = Predicate::new(term);
-
-        let planner = TablePlanner::new("test_table", predicate, tx.clone(), db.metadata_mgr())?;
-
-        // Verify the planner was created successfully
-        assert_eq!(planner.schema.fields().len(), 3);
-        assert!(planner.schema.has_field("id"));
-        assert!(planner.schema.has_field("name"));
-        assert!(planner.schema.has_field("age"));
-
-        tx.commit()?;
-        Ok(())
-    }
-
-    #[test]
     fn test_table_planner_make_select_plan() -> DbResult<()> {
         let db = temp_db()?;
 

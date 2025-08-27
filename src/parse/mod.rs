@@ -13,6 +13,11 @@ pub enum Statement {
         table_name: String,
         schema: Schema,
     },
+    CreateIndex {
+        name: String,
+        table_name: String,
+        column: String, // only a single column is supported for index now
+    },
     Insert {
         table_name: String,
         fields: Vec<String>,
@@ -52,6 +57,7 @@ impl Parser {
 
         match &ast[0] {
             SqlStatement::CreateTable(create_table) => self.parse_create_table(create_table),
+            SqlStatement::CreateIndex(create_index) => self.parse_create_index(create_index),
             SqlStatement::Insert(insert) => self.parse_insert(insert),
             SqlStatement::Update {
                 table,
@@ -106,6 +112,38 @@ impl Parser {
         }
 
         Ok(Statement::CreateTable { table_name, schema })
+    }
+
+    fn parse_create_index(
+        &self,
+        create_index: &sqlparser::ast::CreateIndex,
+    ) -> DbResult<Statement> {
+        let index_name = create_index
+            .name
+            .as_ref()
+            .ok_or_else(|| DbError::Schema("Index name is required".to_string()))?
+            .to_string();
+
+        let table_name = create_index.table_name.to_string();
+
+        if create_index.columns.is_empty() {
+            return Err(DbError::Schema(
+                "No columns specified for index".to_string(),
+            ));
+        }
+        if create_index.columns.len() > 1 {
+            return Err(DbError::Schema(
+                "Only single-column indexes are supported".to_string(),
+            ));
+        }
+
+        let column = create_index.columns[0].to_string();
+
+        Ok(Statement::CreateIndex {
+            name: index_name,
+            table_name,
+            column,
+        })
     }
 
     fn parse_insert(&self, insert: &sqlparser::ast::Insert) -> DbResult<Statement> {
@@ -539,5 +577,76 @@ mod tests {
         let sql = "UPDATE test_table SET"; // Incomplete statement
 
         assert!(parser.parse(sql).is_err());
+    }
+
+    #[test]
+    fn test_parse_create_index() -> DbResult<()> {
+        let parser = Parser::new();
+        let sql = "CREATE INDEX age_idx ON test_table (age)";
+
+        let stmt = parser.parse(sql)?;
+
+        match stmt {
+            Statement::CreateIndex {
+                name,
+                table_name,
+                column,
+            } => {
+                assert_eq!(name, "age_idx");
+                assert_eq!(table_name, "test_table");
+                assert_eq!(column, "age");
+            }
+            _ => panic!("Unexpected statement"),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_create_index_invalid() {
+        let parser = Parser::new();
+
+        let sql1 = "CREATE INDEX age_idx ON test_table ()";
+        assert!(parser.parse(sql1).is_err());
+
+        let sql2 = "CREATE INDEX age_idx ON test_table (age, name)";
+        assert!(parser.parse(sql2).is_err());
+    }
+
+    #[test]
+    fn test_parse_create_index_variations() -> DbResult<()> {
+        let parser = Parser::new();
+
+        let sql1 = "CREATE INDEX idx_1 ON users (id)";
+        let stmt1 = parser.parse(sql1)?;
+        match stmt1 {
+            Statement::CreateIndex {
+                name,
+                table_name,
+                column,
+            } => {
+                assert_eq!(name, "idx_1");
+                assert_eq!(table_name, "users");
+                assert_eq!(column, "id");
+            }
+            _ => panic!("Unexpected statement"),
+        }
+
+        let sql2 = "CREATE INDEX name_idx ON employees (name)";
+        let stmt2 = parser.parse(sql2)?;
+        match stmt2 {
+            Statement::CreateIndex {
+                name,
+                table_name,
+                column,
+            } => {
+                assert_eq!(name, "name_idx");
+                assert_eq!(table_name, "employees");
+                assert_eq!(column, "name");
+            }
+            _ => panic!("Unexpected statement"),
+        }
+
+        Ok(())
     }
 }

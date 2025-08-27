@@ -13,6 +13,7 @@ const STRING_FIELDS_PER_BLOCK: usize = 5;
 const STRING_LENGTH: usize = 10;
 const NUM_ITERATIONS: usize = 3;
 
+// TODO use Criterion for benches
 pub struct BenchmarkResults {
     pub total_time_ms: u128,
     pub transactions_per_second: f64,

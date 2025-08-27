@@ -8,7 +8,6 @@ use crate::{
     plan::{
         Plan,
         project_plan::ProjectPlan,
-        select_plan::SelectPlan,
         table_plan::{TablePlan, TablePlanner},
     },
     query::{Scan, UpdateScan},
@@ -85,8 +84,11 @@ impl Planner {
             Statement::CreateTable { table_name, schema } => {
                 self.execute_create_table(&table_name, &schema, tx)
             }
+            Statement::CreateIndex { name, table_name, column } => {
+                self.execute_create_index(&name, &table_name, &column, tx)
+            }
             _ => Err(crate::error::DbError::Schema(
-                "Only INSERT, UPDATE and CREATE TABLE statements are supported for updates"
+                "Only INSERT, UPDATE, CREATE TABLE and CREATE INDEX statements are supported for updates"
                     .to_string(),
             )),
         }
@@ -128,6 +130,18 @@ impl Planner {
         tx: Transaction<'_>,
     ) -> DbResult<i32> {
         self.metadata_mgr.create_table(table_name, schema, tx)?;
+        Ok(1)
+    }
+
+    fn execute_create_index(
+        &self,
+        name: &str,
+        table_name: &str,
+        column: &str,
+        tx: Transaction<'_>,
+    ) -> DbResult<i32> {
+        self.metadata_mgr
+            .create_index(name, table_name, column, tx)?;
         Ok(1)
     }
 
@@ -287,6 +301,47 @@ mod tests {
 
         let indexes = db.metadata_mgr().get_index_info("test_table", tx.clone())?;
         assert_eq!(indexes.len(), 0);
+
+        tx.commit()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_execute_create_index() -> DbResult<()> {
+        let db = temp_db()?;
+
+        let mut schema = Schema::new();
+        schema.add_int_field("id");
+        schema.add_string_field("name", 20);
+        schema.add_int_field("age");
+
+        let tx = db.new_tx()?;
+
+        db.metadata_mgr()
+            .create_table("test_table", &schema, tx.clone())?;
+
+        let result = db
+            .planner()
+            .execute_update("CREATE INDEX age_idx ON test_table (age)", tx.clone())?;
+        assert_eq!(result, 1);
+
+        let indexes = db.metadata_mgr().get_index_info("test_table", tx.clone())?;
+        assert!(indexes.contains_key("age"));
+
+        let insert_sql = "INSERT INTO test_table (id, name, age) VALUES (1, 'Alice', 25)";
+        let result = db.planner().execute_update(insert_sql, tx.clone())?;
+        assert_eq!(result, 1);
+
+        let age_index_info = indexes.get("age").unwrap();
+        let mut age_index = age_index_info.open(tx.clone())?;
+
+        age_index.before_first(&Constant::int(25))?;
+        assert!(age_index.next()?, "Should find the inserted age value");
+
+        let rid = age_index.get_data_rid()?;
+        assert_eq!(rid.block_number(), 0);
+        assert_eq!(rid.slot(), 1);
+        age_index.close();
 
         tx.commit()?;
         Ok(())
