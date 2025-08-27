@@ -22,10 +22,7 @@ pub enum DbError {
 
     #[error("Serialization error: {0}")]
     Serialization(String),
-
-    #[error("No available slot")]
-    NoAvailableSlot,
-
+    
     #[error("Field not found: {0}")]
     FieldNotFound(String),
 

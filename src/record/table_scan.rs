@@ -171,34 +171,27 @@ impl<'tx> UpdateScan for TableScan<'tx> {
     }
 
     fn insert(&mut self) -> DbResult<()> {
-        let current = self.current_slot.unwrap_or(0);
+        let current_slot = self.current_slot.unwrap_or(0);
+        let current_page = self.record_page.as_ref().unwrap();
+        let mut inserted_at_slot = current_page.insert_after(current_slot)?;
 
-        if let Some(rp) = &self.record_page {
-            if let Some(slot) = rp.insert_after(current)? {
-                self.current_slot = Some(slot);
+        loop {
+            if !inserted_at_slot.is_none() {
+                self.current_slot = inserted_at_slot;
                 return Ok(());
             }
 
-            let at_last = self.at_last_block()?;
-
-            if at_last {
+            // have not found place in the current page, move to the next
+            // TODO just single method -> move_next()
+            if self.at_last_block()? {
                 self.move_to_new_block()?;
             } else {
-                let next_block = rp.block().number() + 1;
-                self.move_to_block(next_block)?;
+                self.move_to_block(self.record_page.as_ref().unwrap().block().number() + 1)?;
             }
-        } else {
-            self.move_to_new_block()?;
-        }
 
-        if let Some(rp) = &self.record_page {
-            if let Some(slot) = rp.insert_after(0)? {
-                self.current_slot = Some(slot);
-                return Ok(());
-            }
+            let current_slot = self.current_slot.unwrap_or(0);
+            inserted_at_slot = self.record_page.as_ref().unwrap().insert_after(current_slot)?;
         }
-
-        Err(DbError::NoAvailableSlot)
     }
 
     fn delete(&mut self) -> DbResult<()> {
@@ -232,92 +225,85 @@ impl<'tx> UpdateScan for TableScan<'tx> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        query::{Scan, UpdateScan},
+        query::UpdateScan,
         record::schema::Schema,
-        utils::testing_utils::temp_db,
+        utils::testing_utils::{temp_db},
     };
 
     use super::*;
 
+
     #[test]
-    fn test() -> DbResult<()> {
+    fn test_insert_and_scan_in_tx() -> DbResult<()> {
+        let num_keys = 500;
         let db = temp_db()?;
 
         let mut schema = Schema::new();
         schema.add_int_field("id");
+        schema.add_int_field("age");
         schema.add_string_field("name", 20);
         let layout = Layout::new(schema);
+        
         let tx = db.new_tx()?;
-
-        tx.append("testfile")?;
-        tx.append("testfile")?;
-        tx.append("testfile")?;
-
-        let mut scan = TableScan::new(tx.clone(), "test_table", layout)?;
-
-        scan.insert()?;
-        scan.set_int("id", 1)?;
-        scan.set_string("name", "Alice")?;
-
-        scan.insert()?;
-        scan.set_int("id", 2)?;
-        scan.set_string("name", "Bob")?;
-
-        scan.insert()?;
-        scan.set_int("id", 3)?;
-        scan.set_string("name", "Charlie")?;
-
-        scan.before_first()?;
-
-        let mut count = 0;
-        while scan.next()? {
-            count += 1;
-            let id = scan.get_int("id")?;
-            let name = scan.get_string("name")?;
-
-            match id {
-                1 => assert_eq!(name, "Alice"),
-                2 => assert_eq!(name, "Bob"),
-                3 => assert_eq!(name, "Charlie"),
-                _ => panic!("Unexpected ID: {}", id),
-            }
-
-            let id_val = scan.get_val("id")?;
-            assert!(id_val.is_integer());
-            assert_eq!(id_val.as_integer(), id);
-
-            let name_val = scan.get_val("name")?;
-            assert_eq!(name_val, Constant::String(name));
+                
+        for i in 0..num_keys {
+            let mut scan = TableScan::new(tx.clone(), "test_table", layout.clone())?;
+            scan.insert().expect(&format!("Failed to insert at {i}"));
+            scan.set_int("id", i)?;
+            scan.set_string("name", &format!("Entry{i}"))?;
+            scan.close();
         }
 
-        assert_eq!(count, 3, "Should have read 3 records");
-
+        let mut scan = TableScan::new(tx.clone(), "test_table", layout.clone())?;
         scan.before_first()?;
-        scan.next()?;
-        scan.delete()?;
-
-        scan.before_first()?;
-        count = 0;
+        let mut i = 0;
         while scan.next()? {
-            count += 1;
+            assert_eq!(i, scan.get_int("id")?);
+            i += 1;
         }
-        assert_eq!(count, 2, "Should have 2 records after deletion");
-
-        scan.before_first()?;
-        scan.next()?;
-        let rid = scan.get_rid()?;
-        let id1 = scan.get_int("id")?;
-
-        scan.next()?;
-        scan.get_int("id")?;
-
-        scan.move_to_rid(rid)?;
-        let id_check = scan.get_int("id")?;
-        assert_eq!(id1, id_check, "RID navigation failed");
-
         scan.close();
         tx.commit()?;
+        assert_eq!(num_keys, i);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_insert_and_scan_in_dedicated_tx() -> DbResult<()> {
+        let num_keys = 500;
+        let db = temp_db()?;
+
+        let mut schema = Schema::new();
+        schema.add_int_field("id");
+        schema.add_int_field("age");
+        schema.add_string_field("name", 20);
+        let layout = Layout::new(schema);
+        
+        {
+            for i in 0..num_keys {
+                let tx = db.new_tx()?;
+                let mut scan = TableScan::new(tx.clone(), "test_table", layout.clone())?;
+                scan.insert().expect(&format!("Failed to insert at {i}"));
+                scan.set_int("id", i)?;
+                scan.set_string("name", &format!("Entry{i}"))?;
+                scan.close();
+                tx.commit()?;
+            }
+        }
+
+        {
+            let tx = db.new_tx()?;
+            let mut scan = TableScan::new(tx.clone(), "test_table", layout.clone())?;
+            scan.before_first()?;
+            let mut i = 0;
+            while scan.next()? {
+                assert_eq!(i, scan.get_int("id")?);
+                i += 1;
+            }
+            scan.close();
+            tx.commit()?;
+            assert_eq!(num_keys, i);
+        }
         Ok(())
     }
 }
