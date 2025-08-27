@@ -82,7 +82,7 @@ impl Config {
     pub fn new(storage_mgr: StorageMgrConfig) -> Self {
         Self {
             storage_mgr,
-            buffer_capacity: 8,
+            buffer_capacity: 64,
             log_file_name: "simpledb.log".to_string(),
         }
     }
