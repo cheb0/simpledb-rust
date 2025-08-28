@@ -237,7 +237,9 @@ dependencies = [
 name = "simpledb-examples"
 version = "0.0.1"
 dependencies = [
+ "rand",
  "simpledb",
+ "tempfile",
 ]
 
 [[package]]
