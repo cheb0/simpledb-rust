@@ -102,8 +102,9 @@ impl Planner {
         tx: Transaction<'_>,
     ) -> DbResult<i32> {
         let layout = self.metadata_mgr.get_layout(table_name, tx.clone())?;
-        let mut scan = TableScan::new(tx.clone(), table_name, layout)?;
+        let mut scan: TableScan<'_> = TableScan::new(tx.clone(), table_name, layout)?;
 
+        scan.move_to_last()?;
         scan.insert()?;
         let rid = scan.get_rid()?;
         let indexes = self.metadata_mgr.get_index_info(table_name, tx.clone())?;

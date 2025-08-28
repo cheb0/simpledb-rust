@@ -35,6 +35,11 @@ impl<'tx> TableScan<'tx> {
         Ok(table_scan)
     }
 
+    pub fn move_to_last(&mut self) -> DbResult<()> {
+        let size = self.tx.size(&self.file_name)?;
+        self.move_to_block(size - 1)
+    }
+
     fn find_first_slot(&mut self) -> DbResult<bool> {
         if let Some(rp) = &self.record_page {
             if let Some(slot) = rp.next_after(0)? {
