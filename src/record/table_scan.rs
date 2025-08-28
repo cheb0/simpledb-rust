@@ -26,6 +26,7 @@ impl<'tx> TableScan<'tx> {
             current_slot: None,
         };
 
+        // TODO we move to first and then to the last in INSERT case
         if table_scan.tx.size(&table_scan.file_name)? == 0 {
             table_scan.move_to_new_block()?;
         } else {
