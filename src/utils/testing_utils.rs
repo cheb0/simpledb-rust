@@ -10,16 +10,16 @@ const TEST_PAGE_SIZE: usize = 400;
 
 /// DB newtype which carries an instance of DB as well as TempDir and Config. TempDir must be dropped after
 /// DB is dropped.
-pub struct TempSimpleDB<'a> {
-    db: Option<SimpleDB<'a>>,
+pub struct TempSimpleDB {
+    db: Option<SimpleDB>,
     cfg: Config,
     dir: Option<TempDir>,
 }
 
-impl<'a> TempSimpleDB<'a> {
+impl TempSimpleDB {
     /// Consumes self and drops the current database. Opens a new database in the same directory with the same config. Transfers
     /// ownership of TempDir instance.
-    pub fn reopen<'b>(mut self) -> DbResult<TempSimpleDB<'b>> {
+    pub fn reopen<'b>(mut self) -> DbResult<TempSimpleDB> {
         let tmp_dir = self.dir.take();
         let cfg = self.cfg.clone();
 
@@ -34,8 +34,8 @@ impl<'a> TempSimpleDB<'a> {
     }
 }
 
-impl<'a> Deref for TempSimpleDB<'a> {
-    type Target = SimpleDB<'a>;
+impl Deref for TempSimpleDB {
+    type Target = SimpleDB;
 
     fn deref(&self) -> &Self::Target {
         return &self.db.as_ref().unwrap();
@@ -43,20 +43,20 @@ impl<'a> Deref for TempSimpleDB<'a> {
 }
 
 // Takes out of Option<SimpleDB> which means db is destroyed before temp_dir
-impl<'a> Drop for TempSimpleDB<'a> {
+impl<'a> Drop for TempSimpleDB {
     fn drop(&mut self) {
         // TODO check drop order
         self.db.take();
     }
 }
 
-pub fn temp_db<'a>() -> DbResult<TempSimpleDB<'a>> {
+pub fn temp_db() -> DbResult<TempSimpleDB> {
     return temp_db_with_cfg(|cfg| cfg);
 }
 
-pub fn temp_db_with_cfg<'a>(
+pub fn temp_db_with_cfg(
     mut cfg_updater: impl FnMut(Config) -> Config,
-) -> DbResult<TempSimpleDB<'a>> {
+) -> DbResult<TempSimpleDB> {
     let temp_dir = TempDir::new().unwrap();
     let mut cfg = Config::new(StorageMgrConfig::file(temp_dir.path()));
     cfg = cfg.block_size(TEST_PAGE_SIZE);

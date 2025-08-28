@@ -171,7 +171,7 @@ mod tests {
     }
 
     fn setup_internal_node<'tx>(
-        db: &'tx SimpleDB<'tx>,
+        db: &'tx SimpleDB,
     ) -> DbResult<(Transaction<'tx>, BTreeInternal<'tx>)> {
         let tx = db.new_tx()?;
         let block = tx.append("test")?;

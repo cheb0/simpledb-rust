@@ -14,17 +14,16 @@ use crate::tx::concurrency::LockTable;
 
 use super::Config;
 
-pub struct SimpleDB<'a> {
+pub struct SimpleDB {
     storage_mgr: Arc<dyn StorageMgr>,
     log_mgr: Arc<LogMgr>,
     buffer_mgr: Arc<BufferMgr>,
     planner: Option<Planner>,
     metadata_mgr: Option<Arc<MetadataMgr>>,
     lock_table: Arc<LockTable>,
-    _phantom: PhantomData<&'a ()>,
 }
 
-impl<'a> SimpleDB<'a> {
+impl SimpleDB {
     pub fn with_config(config: Config) -> DbResult<Self> {
         let storage_mgr: Arc<dyn StorageMgr> = match &config.storage_mgr {
             crate::server::config::StorageMgrConfig::File(file_config) => Arc::new(
@@ -55,7 +54,6 @@ impl<'a> SimpleDB<'a> {
             metadata_mgr: None,
             planner: None,
             lock_table,
-            _phantom: PhantomData,
         };
 
         let tx = db.new_tx()?;
@@ -85,6 +83,7 @@ impl<'a> SimpleDB<'a> {
     pub fn new_mem() -> DbResult<Self> {
         Self::with_config(Config::mem())
     }
+
     /*
     pub fn load_metadata(&mut self) -> DbResult<()> {
         let tx = Transaction::new(
@@ -101,7 +100,7 @@ impl<'a> SimpleDB<'a> {
         Ok(())
     } */
 
-    pub fn new_tx(&'a self) -> DbResult<Transaction<'a>> {
+    pub fn new_tx<'a>(&'a self) -> DbResult<Transaction<'a>> {
         Transaction::new(
             &*self.storage_mgr,
             &self.log_mgr,
@@ -110,8 +109,15 @@ impl<'a> SimpleDB<'a> {
         )
     }
 
-    pub fn buffer_mgr(&'a self) -> &'a BufferMgr {
+    pub fn buffer_mgr<'a>(&'a self) -> &'a BufferMgr {
         &self.buffer_mgr
+    }
+
+    /// Get the database directory path (only applicable for file-based storage)
+    pub fn db_path(&self) -> Option<&Path> {
+        // For now, we'll need to handle this differently since we can't easily access the internal path
+        // We'll modify the stress test to pass the path directly
+        None
     }
 
     pub fn metadata_mgr(&self) -> &MetadataMgr {

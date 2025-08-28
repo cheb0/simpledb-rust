@@ -199,7 +199,7 @@ mod tests {
         Layout::new(schema)
     }
 
-    fn setup_index<'db>(db: &'db SimpleDB<'db>) -> DbResult<BTreeIndex<'db>> {
+    fn setup_index<'tx>(db: &'tx SimpleDB) -> DbResult<BTreeIndex<'tx>> {
         let tx = db.new_tx()?;
         let layout = create_test_layout();
         let index_name = "test";
