@@ -18,15 +18,24 @@ pub struct SearchResults {
 pub fn run_person_search_benchmark(db: &mut SimpleDB) -> DbResult<SearchResults> {
     println!("Setting up Person table with {} records...", NUM_PERSONS);
 
-    let mut schema = Schema::new();
-    schema.add_int_field("id");
-    schema.add_int_field("age");
-    schema.add_string_field("name", 20);
+    {
+        let mut schema = Schema::new();
+        schema.add_int_field("id");
+        schema.add_int_field("age");
+        schema.add_string_field("name", 20);
+
+        let tx = db.new_tx()?;
+
+        db.metadata_mgr().create_table("Person", &schema, tx.clone())?;
+        
+        // db.metadata_mgr().create_index("id_index", "Person", "id", tx.clone())?;
+        tx.commit()?;
+    }
 
     let start_insert = Instant::now();
     {
         let tx = db.new_tx()?;
-        db.metadata_mgr().create_table("Person", &schema, tx.clone())?;
+        
         println!("Created Person table with schema: id, age, name");
 
         for i in 0..NUM_PERSONS {
