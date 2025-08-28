@@ -1,6 +1,5 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::{Duration, Instant};
 
 use crate::buffer::Buffer;
@@ -11,11 +10,9 @@ use crate::storage::StorageMgr;
 
 /// Manages the buffer pool, which consists of a collection of Buffer objects.
 /// It employs interrior mutability and also is thread-safe
-/// TODO Current implementation is naive (and unsafe) and has lots of O(N) functions,
-/// need to implement LRU or FIFO and optimize it
 pub struct BufferMgr {
     inner: Mutex<BufferMgrInner>,
-    buffers: Box<[RefCell<Buffer>]>,
+    buffers: Box<[RwLock<Buffer>]>,
     condvar: Condvar,
 }
 
@@ -30,7 +27,7 @@ struct BufferMgrInner {
 
 pub struct PinnedBufferGuard<'a> {
     buffer_mgr: &'a BufferMgr,
-    buffer: &'a RefCell<Buffer>,
+    buffer: &'a RwLock<Buffer>,
     idx: usize,
 }
 
@@ -38,7 +35,7 @@ impl BufferMgr {
     pub fn new(storage_mgr: Arc<dyn StorageMgr>, log_mgr: Arc<LogMgr>, buffer_cnt: usize) -> Self {
         let mut buffers = Vec::with_capacity(buffer_cnt);
         for _ in 0..buffer_cnt {
-            buffers.push(RefCell::new(Buffer::new(
+            buffers.push(RwLock::new(Buffer::new(
                 Arc::clone(&storage_mgr),
                 Arc::clone(&log_mgr),
             )));
@@ -64,7 +61,7 @@ impl BufferMgr {
         let _guard = self.inner.lock().unwrap();
 
         for buffer in self.buffers.iter() {
-            let mut buffer = buffer.borrow_mut();
+            let mut buffer = buffer.write().unwrap();
             if buffer.modifying_tx() == txnum {
                 buffer.flush()?;
             }
@@ -103,9 +100,6 @@ impl BufferMgr {
                 inner.available_cnt -= 1;
             }
             inner.pins[idx] += 1;
-
-            let _buffer = self.buffers[idx].borrow_mut();
-
             return Ok(Some(idx));
         }
 
@@ -114,7 +108,7 @@ impl BufferMgr {
             inner.pins[idx] = 1;
             inner.available_cnt -= 1;
 
-            let mut buffer = self.buffers[idx].borrow_mut();
+            let mut buffer = self.buffers[idx].write().unwrap();
             if let Some(block) = buffer.block() {
                 inner.block_to_buffer_idx.remove(&block);
             }
@@ -138,7 +132,6 @@ impl BufferMgr {
 
     fn unpin_internal(&self, idx: usize) {
         let mut inner = self.inner.lock().unwrap();
-        let _ = self.buffers[idx].borrow_mut();
 
         inner.pins[idx] -= 1;
 
@@ -150,12 +143,12 @@ impl BufferMgr {
 }
 
 impl<'a> PinnedBufferGuard<'a> {
-    pub fn borrow_mut(&self) -> std::cell::RefMut<'_, Buffer> {
-        self.buffer.borrow_mut()
+    pub fn borrow_mut(&self) -> RwLockWriteGuard<'a, Buffer> {
+        self.buffer.write().unwrap()
     }
 
-    pub fn borrow(&self) -> std::cell::Ref<'_, Buffer> {
-        self.buffer.borrow()
+    pub fn borrow(&self) -> RwLockReadGuard<'a, Buffer> {
+        self.buffer.read().unwrap()
     }
 }
 
@@ -173,6 +166,7 @@ mod tests {
     use crate::storage::StorageMgr;
     use std::sync::{Arc, Barrier};
     use std::thread;
+    use rand::Rng;
     use tempfile::TempDir;
 
     struct TestEnvironment {
@@ -215,7 +209,7 @@ mod tests {
         assert_eq!(env.buffer_mgr.available(), 2);
 
         {
-            let mut buffer: std::cell::RefMut<'_, Buffer> = pinned_buf.borrow_mut();
+            let mut buffer= pinned_buf.borrow_mut();
             buffer.contents_mut().set_int(0, 123);
             buffer.set_modified(1, 0); // Set as modified by transaction 1
         }
@@ -302,11 +296,11 @@ mod tests {
     }
 
     #[test]
-    fn test_buffer_manager_concurrent_access() -> DbResult<()> {
+    fn test_buffer_manager_concurrent_access_different_blocks() -> DbResult<()> {
         let env = TestEnvironment::new(3)?;
 
         let threads_cnt = 5;
-        let ops_per_thread = 100;
+        let ops_per_thread = 10000;
         let blocks_cnt = threads_cnt * ops_per_thread;
         for _ in 0..blocks_cnt {
             env.storage_mgr.append("testfile")?;
@@ -323,7 +317,7 @@ mod tests {
                 barrier_clone.wait();
 
                 for i in 0..ops_per_thread {
-                    let blk = BlockId::new("testfile".to_string(), (thread_id * 100 + i) as i32);
+                    let blk: BlockId = BlockId::new("testfile".to_string(), (thread_id * ops_per_thread + i) as i32);
                     let guard = buffer_mgr_clone.pin(&blk).unwrap();
 
                     {
@@ -332,8 +326,6 @@ mod tests {
                         buffer.contents_mut().set_int(0, value);
                         buffer.set_modified(thread_id as i32, 0);
                     }
-
-                    thread::sleep(Duration::from_millis(1));
                 }
             });
 
@@ -348,6 +340,54 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_buffer_manager_concurrent_access_same_blocks() -> DbResult<()> {
+        let env = TestEnvironment::new(3)?;
+
+        let threads_cnt = 5;
+        let ops_per_thread = 10000;
+        let blocks_cnt = 20;
+        for _ in 0..blocks_cnt {
+            env.storage_mgr.append("testfile")?;
+        }
+
+        let barrier = Arc::new(Barrier::new(threads_cnt));
+
+        let mut handles = Vec::new();
+        for thread_id in 0..threads_cnt {
+            let buffer_mgr_clone = Arc::clone(&env.buffer_mgr);
+            let barrier_clone = Arc::clone(&barrier);
+
+            let handle = thread::spawn(move || {
+                barrier_clone.wait();
+
+                let mut rng: rand::prelude::ThreadRng = rand::rng();
+                for i in 0..ops_per_thread {
+                    let blk: BlockId = BlockId::new("testfile".to_string(), rng.random_range(0..blocks_cnt));
+                    let guard = buffer_mgr_clone.pin(&blk).unwrap();
+
+                    {
+                        let mut buffer = guard.borrow_mut();
+                        let value = (thread_id * 1000 + i) as i32;
+                        buffer.contents_mut().set_int(0, value);
+                        buffer.set_modified(thread_id as i32, 0);
+                    }
+                }
+            });
+
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        assert_eq!(env.buffer_mgr.available(), 3);
+
+        Ok(())
+    }
+
 
     #[test]
     fn test_buffer_manager_buffer_abort() -> DbResult<()> {
