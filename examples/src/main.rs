@@ -1,3 +1,5 @@
+pub mod stress;
+
 use simpledb::{DbResult, SimpleDB, record::Schema};
 
 use rand::Rng;

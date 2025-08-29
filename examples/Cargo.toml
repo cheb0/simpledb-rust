@@ -3,6 +3,14 @@ name = "simpledb-examples"
 version = "0.0.1"
 edition = "2024"
 
+[[bin]]
+name = "src"
+path = "src/main.rs"
+
+[[bin]]
+name = "stress"
+path = "src/stress.rs"
+
 [dependencies]
 simpledb = { path = ".." }
 tempfile = "3.3.0"
