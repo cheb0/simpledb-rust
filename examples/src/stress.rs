@@ -15,7 +15,6 @@ const STRING_LENGTH: usize = 20;
 pub struct StressTestResults {
     pub setup_time_ms: u128,
     pub total_read_time_ms: u128,
-    pub total_write_time_ms: u128,
     pub reads_per_second: f64,
     pub writes_per_second: f64,
     pub successful_reads: usize,
@@ -65,7 +64,6 @@ pub fn run_stress_test(db_ptr: Arc<SimpleDB>) -> DbResult<StressTestResults> {
     let results = Arc::new(Mutex::new(StressTestResults {
         setup_time_ms: setup_time.as_millis(),
         total_read_time_ms: 0,
-        total_write_time_ms: 0,
         reads_per_second: 0.0,
         writes_per_second: 0.0,
         successful_reads: 0,
@@ -75,8 +73,10 @@ pub fn run_stress_test(db_ptr: Arc<SimpleDB>) -> DbResult<StressTestResults> {
     }));
     
     println!("Starting {} reader threads...", NUM_READERS);
+    // TODO start readers
     
     println!("Starting {} writer threads...", NUM_WRITERS);
+    let start_time = Instant::now();
     let mut writer_handles = vec![];
     for writer_id in 0..NUM_WRITERS {
         let db = Arc::clone(&db_ptr);
@@ -84,7 +84,6 @@ pub fn run_stress_test(db_ptr: Arc<SimpleDB>) -> DbResult<StressTestResults> {
         let results_clone = results.clone();
         
         let handle = thread::spawn(move || {
-            let start_time = Instant::now();
             let mut successful = 0;
             let mut failed = 0;
             
@@ -109,23 +108,14 @@ pub fn run_stress_test(db_ptr: Arc<SimpleDB>) -> DbResult<StressTestResults> {
                 }
                 tx.commit().unwrap();
                 
-                if (op + 1) % 200 == 0 {
+                if (op + 1) % 10000 == 0 {
                     println!("Writer {}: Completed {} operations", writer_id, op + 1);
                 }
-                
-                // Small delay to simulate real-world scenario
-                thread::sleep(Duration::from_millis(1));
             }
-            
-            let duration = start_time.elapsed();
 
             let mut results_guard = results_clone.lock().unwrap();
-            results_guard.total_write_time_ms += duration.as_millis();
             results_guard.successful_writes += successful;
             results_guard.failed_writes += failed;
-            
-            println!("Writer {} completed: {} successful, {} failed in {} ms", 
-                writer_id, successful, failed, duration.as_millis());
         });
         writer_handles.push(handle);
     }
@@ -137,18 +127,19 @@ pub fn run_stress_test(db_ptr: Arc<SimpleDB>) -> DbResult<StressTestResults> {
     for handle in writer_handles {
         handle.join().unwrap();
     }
+    let duration = start_time.elapsed();
+    
     
     let mut results_guard = results.lock().unwrap();
     let total_read_ops = NUM_READERS * READ_OPERATIONS;
     let total_write_ops = NUM_WRITERS * WRITE_OPERATIONS;
     
     results_guard.reads_per_second = total_read_ops as f64 / (results_guard.total_read_time_ms as f64 / 1000.0);
-    results_guard.writes_per_second = total_write_ops as f64 / (results_guard.total_write_time_ms as f64 / 1000.0);
+    results_guard.writes_per_second = total_write_ops as f64 / (duration.as_millis() as f64 / 1000.0);
     
     let final_results = StressTestResults {
         setup_time_ms: results_guard.setup_time_ms,
         total_read_time_ms: results_guard.total_read_time_ms,
-        total_write_time_ms: results_guard.total_write_time_ms,
         reads_per_second: results_guard.reads_per_second,
         writes_per_second: results_guard.writes_per_second,
         successful_reads: results_guard.successful_reads,
@@ -164,7 +155,6 @@ fn print_stress_results(results: &StressTestResults) {
     println!("\n=== Stress Test Results ===");
     println!("Setup time: {} ms", results.setup_time_ms);
     println!("Total read time: {} ms", results.total_read_time_ms);
-    println!("Total write time: {} ms", results.total_write_time_ms);
     println!("Read performance: {:.2} ops per second", results.reads_per_second);
     println!("Write performance: {:.2} ops per second", results.writes_per_second);
     println!("Successful reads: {}", results.successful_reads);
@@ -180,11 +170,6 @@ fn print_stress_results(results: &StressTestResults) {
 fn main() -> DbResult<()> {
     let temp_dir = TempDir::new().unwrap();
     println!("Creating database in: {:?}", temp_dir.path());
-    println!("Configuration:");
-    println!("  - {} reader threads, {} operations each", NUM_READERS, READ_OPERATIONS);
-    println!("  - {} writer threads, {} operations each", NUM_WRITERS, WRITE_OPERATIONS);
-    println!("  - Total: {} read operations, {} write operations", 
-        NUM_READERS * READ_OPERATIONS, NUM_WRITERS * WRITE_OPERATIONS);
     
     let db = Arc::new(SimpleDB::new(temp_dir.path())?);
     
