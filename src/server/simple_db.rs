@@ -1,4 +1,3 @@
-use std::marker::PhantomData;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -111,13 +110,6 @@ impl SimpleDB {
 
     pub fn buffer_mgr<'a>(&'a self) -> &'a BufferMgr {
         &self.buffer_mgr
-    }
-
-    /// Get the database directory path (only applicable for file-based storage)
-    pub fn db_path(&self) -> Option<&Path> {
-        // For now, we'll need to handle this differently since we can't easily access the internal path
-        // We'll modify the stress test to pass the path directly
-        None
     }
 
     pub fn metadata_mgr(&self) -> &MetadataMgr {
