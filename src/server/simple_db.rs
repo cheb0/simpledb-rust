@@ -8,7 +8,7 @@ use crate::metadata::{IndexMgr, MetadataMgr, TableMgr};
 
 use crate::plan::Planner;
 use crate::storage::{FileStorageMgr, MemStorageMgr, StorageMgr};
-use crate::tx::Transaction;
+use crate::tx::{Transaction, TransactionIntent};
 use crate::tx::concurrency::LockTable;
 
 use super::Config;
@@ -105,6 +105,19 @@ impl SimpleDB {
             &self.log_mgr,
             &self.buffer_mgr,
             Arc::clone(&self.lock_table),
+            None
+        )
+    }
+    
+    // Creates transaction which will will very likely write
+    // TODO delete this after we have proper deadlock detection
+    pub fn new_write_tx<'a>(&'a self) -> DbResult<Transaction<'a>> {
+        Transaction::new(
+            &*self.storage_mgr,
+            &self.log_mgr,
+            &self.buffer_mgr,
+            Arc::clone(&self.lock_table),
+            Some(TransactionIntent::WriteOnly)
         )
     }
 

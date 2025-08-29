@@ -4,12 +4,7 @@ use std::sync::Arc;
 use super::lock_table::LockTable;
 use crate::error::DbResult;
 use crate::storage::BlockId;
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum LockType {
-    Shared,
-    Exclusive,
-}
+use crate::tx::concurrency::LockType;
 
 /// Concurrency manager which maintains all locks held by transactions.
 /// Interrior mutable.
@@ -26,26 +21,26 @@ impl ConcurrencyMgr {
         }
     }
 
-    pub fn lock_shared(&mut self, blk: &BlockId) -> DbResult<()> {
+    pub fn lock_s(&mut self, blk: &BlockId, tx_id: i32) -> DbResult<()> {
         if !self.locks.contains_key(blk) {
-            self.lock_table.lock_shared(blk)?;
+            self.lock_table.lock_s(blk, tx_id)?;
             self.locks.insert(blk.clone(), LockType::Shared);
         }
         Ok(())
     }
 
-    pub fn lock_exclusive(&mut self, blk: &BlockId) -> DbResult<()> {
+    pub fn lock_x(&mut self, blk: &BlockId, tx_id: i32) -> DbResult<()> {
         let current_lock = self.locks.get(&blk);
         match current_lock {
             Some(LockType::Exclusive) => {
                 return Ok(());
             },
             Some(LockType::Shared) => {
-                self.lock_table.upgrade_to_exclusive(blk)?;
+                self.lock_table.upgrade_to_x(blk, tx_id)?;
                 self.locks.insert(blk.clone(), LockType::Exclusive);
             },
             None => {
-                self.lock_table.lock_exclusive(blk)?;
+                self.lock_table.lock_x(blk, tx_id)?;
                 self.locks.insert(blk.clone(), LockType::Exclusive);
             },
         }
@@ -80,16 +75,16 @@ mod tests {
         let mut ccy_mgr = ConcurrencyMgr::new(Arc::clone(&lock_table));
         let blk = BlockId::new("testfile".to_string(), 1);
 
-        ccy_mgr.lock_shared(&blk)?;
+        ccy_mgr.lock_s(&blk,0)?;
 
         let lock_table_clone = Arc::clone(&lock_table);
         let blk_clone = blk.clone();
 
         let handle = thread::spawn(move || -> DbResult<()> {
             let mut cm2: ConcurrencyMgr = ConcurrencyMgr::new(lock_table_clone);
-            cm2.lock_shared(&blk_clone)?;
+            cm2.lock_s(&blk_clone, 0)?;
 
-            let result = cm2.lock_exclusive(&blk_clone);
+            let result = cm2.lock_x(&blk_clone, 0);
 
             // two S locks - fail to acquire X lock
             assert!(matches!(result, Err(DbError::LockAbort)));
@@ -101,7 +96,7 @@ mod tests {
         handle.join().unwrap()?;
 
         // single S lock now - should acquire X lock
-        let result = ccy_mgr.lock_exclusive(&blk);
+        let result = ccy_mgr.lock_x(&blk, 0);
         assert!(result.is_ok());
 
         ccy_mgr.release();
@@ -112,7 +107,7 @@ mod tests {
         let handle = thread::spawn(move || -> DbResult<()> {
             // it's free, should be able to acquire X lock
             let mut cm3 = ConcurrencyMgr::new(lock_table_clone);
-            cm3.lock_exclusive(&blk_clone)?;
+            cm3.lock_x(&blk_clone, 0)?;
             cm3.release();
             Ok(())
         });
@@ -145,7 +140,7 @@ mod tests {
                     let blk = BlockId::new(format!("stress_file"), block_num as i32);
                     let lock_start = Instant::now();
                     
-                    concurrency_mgr.lock_exclusive(&blk).unwrap();
+                    concurrency_mgr.lock_x(&blk, 0).unwrap();
                     thread::sleep(Duration::from_micros(1));
                     concurrency_mgr.release();
                     // concurrency_mgr = ConcurrencyMgr::new(Arc::clone(&lock_table_clone));
@@ -209,9 +204,9 @@ mod tests {
                     let use_exclusive = op_num % 3 == 0;
                     
                     let result = if use_exclusive {
-                        concurrency_mgr.lock_exclusive(&blk)
+                        concurrency_mgr.lock_x(&blk, op_num as i32)
                     } else {
-                        concurrency_mgr.lock_shared(&blk)
+                        concurrency_mgr.lock_s(&blk, op_num as i32)
                     };
                     
                     match result {

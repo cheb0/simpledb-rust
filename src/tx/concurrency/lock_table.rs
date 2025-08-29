@@ -29,22 +29,22 @@ impl LockTable {
     /// If an exclusive lock exists on the block, then the method waits
     /// until the lock is released. If the wait times out, then an
     /// exception is thrown.
-    pub fn lock_shared(&self, blk: &BlockId) -> DbResult<()> {
+    pub fn lock_s(&self, blk: &BlockId, tx_id: i32) -> DbResult<()> {
         let start_time = Instant::now();
         let max_duration = Duration::from_millis(self.max_time);
 
         let mut locks = self.locks.lock().unwrap();
 
-        while self.has_exclusive_lock(&locks, blk) && !self.waiting_too_long(start_time) {
+        while self.has_x_lock(&locks, blk) && !self.waiting_too_long(start_time) {
             let result = self.cond.wait_timeout(locks, max_duration).unwrap();
             locks = result.0;
 
-            if result.1.timed_out() && self.has_exclusive_lock(&locks, blk) {
+            if result.1.timed_out() && self.has_x_lock(&locks, blk) {
                 return Err(DbError::LockAbort);
             }
         }
 
-        if self.has_exclusive_lock(&locks, blk) {
+        if self.has_x_lock(&locks, blk) {
             return Err(DbError::LockAbort);
         }
 
@@ -56,22 +56,22 @@ impl LockTable {
 
     /// Upgrades lock from S to X
     /// This method must be called if S lock has been already taken for the provided block
-    pub fn upgrade_to_exclusive(&self, blk: &BlockId) -> DbResult<()> {
+    pub fn upgrade_to_x(&self, blk: &BlockId, tx_id: i32) -> DbResult<()> {
         let start_time = Instant::now();
         let max_duration = Duration::from_millis(self.max_time);
 
         let mut locks = self.locks.lock().unwrap();
 
-        while self.has_other_shared_locks(&locks, blk) && !self.waiting_too_long(start_time) {
+        while self.has_other_s_locks(&locks, blk) && !self.waiting_too_long(start_time) {
             let result = self.cond.wait_timeout(locks, max_duration).unwrap();
             locks = result.0;
 
-            if result.1.timed_out() && self.has_other_shared_locks(&locks, blk) {
+            if result.1.timed_out() && self.has_other_s_locks(&locks, blk) {
                 return Err(DbError::LockAbort);
             }
         }
 
-        if self.has_other_shared_locks(&locks, blk) {
+        if self.has_other_s_locks(&locks, blk) {
             return Err(DbError::LockAbort);
         }
 
@@ -82,22 +82,22 @@ impl LockTable {
 
 
     /// Acquire an exclusive lock on the specified block.
-    pub fn lock_exclusive(&self, blk: &BlockId) -> DbResult<()> {
+    pub fn lock_x(&self, blk: &BlockId, tx_id: i32) -> DbResult<()> {
         let start_time = Instant::now();
         let max_duration = Duration::from_millis(self.max_time);
 
         let mut locks = self.locks.lock().unwrap();
 
-        while self.has_shared_locks(&locks, blk) && !self.waiting_too_long(start_time) {
+        while self.has_s_locks(&locks, blk) && !self.waiting_too_long(start_time) {
             let result = self.cond.wait_timeout(locks, max_duration).unwrap();
             locks = result.0;
 
-            if result.1.timed_out() && self.has_shared_locks(&locks, blk) {
+            if result.1.timed_out() && self.has_s_locks(&locks, blk) {
                 return Err(DbError::LockAbort);
             }
         }
 
-        if self.has_shared_locks(&locks, blk) {
+        if self.has_s_locks(&locks, blk) {
             return Err(DbError::LockAbort);
         }
 
@@ -121,15 +121,15 @@ impl LockTable {
         }
     }
 
-    fn has_exclusive_lock(&self, locks: &HashMap<BlockId, i32>, blk: &BlockId) -> bool {
+    fn has_x_lock(&self, locks: &HashMap<BlockId, i32>, blk: &BlockId) -> bool {
         self.get_lock_val(locks, blk) < 0
     }
 
-    fn has_shared_locks(&self, locks: &HashMap<BlockId, i32>, blk: &BlockId) -> bool {
+    fn has_s_locks(&self, locks: &HashMap<BlockId, i32>, blk: &BlockId) -> bool {
         self.get_lock_val(locks, blk) > 0
     }
 
-    fn has_other_shared_locks(&self, locks: &HashMap<BlockId, i32>, blk: &BlockId) -> bool {
+    fn has_other_s_locks(&self, locks: &HashMap<BlockId, i32>, blk: &BlockId) -> bool {
         self.get_lock_val(locks, blk) > 1
     }
 
@@ -145,6 +145,7 @@ impl LockTable {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicI32, Ordering};
     use std::sync::Arc;
     use std::thread;
     use std::time::Duration;
@@ -155,12 +156,12 @@ mod tests {
         let lock_table = Arc::new(LockTable::new());
         let blk = BlockId::new("testfile".to_string(), 1);
 
-        lock_table.lock_shared(&blk).unwrap();
+        lock_table.lock_s(&blk, 0).unwrap();
 
         let lt_clone = Arc::clone(&lock_table);
         let blk_clone = blk.clone();
         let handle = thread::spawn(move || {
-            let result = lt_clone.lock_exclusive(&blk_clone);
+            let result = lt_clone.lock_x(&blk_clone, 1);
             assert!(result.is_ok());
         });
 
@@ -173,7 +174,7 @@ mod tests {
         let lt_clone = Arc::clone(&lock_table);
         let blk_clone = blk.clone();
         let handle = thread::spawn(move || {
-            let result = lt_clone.lock_shared(&blk_clone);
+            let result = lt_clone.lock_s(&blk_clone, 2);
             assert!(result.is_ok());
             lt_clone.unlock(&blk_clone);
         });
@@ -190,9 +191,9 @@ mod tests {
         let lock_table = LockTable::with_timeout(100);
         let blk = BlockId::new("testfile".to_string(), 1);
 
-        lock_table.lock_shared(&blk).unwrap();
+        lock_table.lock_s(&blk, 0).unwrap();
 
-        lock_table.upgrade_to_exclusive(&blk).unwrap();
+        lock_table.upgrade_to_x(&blk, 0).unwrap();
 
         lock_table.unlock(&blk);
     }
@@ -202,9 +203,9 @@ mod tests {
         let lock_table = LockTable::with_timeout(100);
         let blk = BlockId::new("testfile".to_string(), 1);
 
-        lock_table.lock_exclusive(&blk).unwrap();
+        lock_table.lock_x(&blk, 0).unwrap();
 
-        let result = lock_table.lock_shared(&blk);
+        let result = lock_table.lock_s(&blk, 0);
         assert!(matches!(result, Err(DbError::LockAbort)));
 
         lock_table.unlock(&blk);
@@ -229,7 +230,7 @@ mod tests {
                     let block_idx = rng.random_range(0..NUM_BLOCKS);
                     let blk = BlockId::new("test_file".to_string(), block_idx as i32);
                     
-                    lock_table_clone.lock_shared(&blk).unwrap();
+                    lock_table_clone.lock_s(&blk, 0).unwrap();
                     thread::sleep(Duration::from_micros(2));
                     lock_table_clone.unlock(&blk);
                 }
@@ -249,20 +250,23 @@ mod tests {
         const OPERATIONS_PER_THREAD: usize = 5_000;
         const NUM_BLOCKS: usize = 3;
         
+        let time = Arc::new(AtomicI32::new(0));
         let lock_table = Arc::new(LockTable::new());
         
         let mut handles = Vec::new();
         for _ in 0..NUM_THREADS {
             let lock_table_clone = Arc::clone(&lock_table);
-            
+            let time_clone = Arc::clone(&time);
+
             let handle = thread::spawn(move || {
+                
                 let mut rng = rand::rng();
                 
                 for _ in 0..OPERATIONS_PER_THREAD {
                     let block_idx = rng.random_range(0..NUM_BLOCKS);
                     let blk = BlockId::new("test_file".to_string(), block_idx as i32);
-                    
-                    lock_table_clone.lock_exclusive(&blk).unwrap();
+                    let tx_id = time_clone.fetch_add(1, Ordering::SeqCst);
+                    lock_table_clone.lock_x(&blk, tx_id).unwrap();
                     thread::sleep(Duration::from_micros(2));
                     lock_table_clone.unlock(&blk);
                 }
@@ -281,24 +285,27 @@ mod tests {
         const NUM_THREADS: usize = 5;
         const OPERATIONS_PER_THREAD: usize = 5_000;
         const NUM_BLOCKS: usize = 3;
-        
+
+        let time = Arc::new(AtomicI32::new(0));
         let lock_table = Arc::new(LockTable::new());
         
         let mut handles = Vec::new();
         for _ in 0..NUM_THREADS {
             let lock_table_clone = Arc::clone(&lock_table);
+            let time_clone = Arc::clone(&time);
             
             let handle = thread::spawn(move || {
                 let mut rng = rand::rng();
                 
                 for _ in 0..OPERATIONS_PER_THREAD {
+                    let tx_id = time_clone.fetch_add(1, Ordering::SeqCst);
                     let block_idx = rng.random_range(0..NUM_BLOCKS);
                     let blk = BlockId::new("test_file".to_string(), block_idx as i32);
                     
                     if rng.random_bool(0.5) {
-                        lock_table_clone.lock_exclusive(&blk).unwrap();
+                        lock_table_clone.lock_x(&blk, tx_id).unwrap();
                     } else {
-                        lock_table_clone.lock_shared(&blk).unwrap();
+                        lock_table_clone.lock_s(&blk, tx_id).unwrap();
                     }
                     thread::sleep(Duration::from_micros(2));
                     lock_table_clone.unlock(&blk);

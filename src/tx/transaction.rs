@@ -7,7 +7,7 @@ use std::{
     },
 };
 
-use crate::buffer::{BufferList, BufferMgr};
+use crate::{buffer::{BufferList, BufferMgr}, tx::TransactionIntent};
 use crate::error::DbResult;
 use crate::log::LogMgr;
 use crate::{
@@ -30,6 +30,7 @@ static NEXT_TX_ID: AtomicI32 = AtomicI32::new(0);
 // Transaction is alive as long as DB is alive, so we can reference BufferMgr, StorageMgr, LogMgr.
 pub struct TransactionInner<'a> {
     id: i32,
+    intent: Option<TransactionIntent>,
     buffer_mgr: &'a BufferMgr,
     concurrency_mgr: ConcurrencyMgr,
     log_mgr: &'a LogMgr,
@@ -47,6 +48,7 @@ impl<'a> Transaction<'a> {
         log_mgr: &'a LogMgr,
         buffer_mgr: &'a BufferMgr,
         lock_table: Arc<LockTable>,
+        intent: Option<TransactionIntent>,
     ) -> DbResult<Self> {
         let tx_id = NEXT_TX_ID.fetch_add(1, Ordering::SeqCst) + 1;
 
@@ -63,6 +65,7 @@ impl<'a> Transaction<'a> {
             id: tx_id,
             buffers,
             concurrency_mgr: ConcurrencyMgr::new(lock_table),
+            intent
         };
 
         Ok(Transaction {
@@ -136,7 +139,13 @@ impl<'a> Transaction<'a> {
 
     pub fn get_int(&self, blk: &BlockId, offset: usize) -> DbResult<i32> {
         let mut tx_inner = self.inner.borrow_mut();
-        tx_inner.concurrency_mgr.lock_shared(blk)?;
+        let tx_id = tx_inner.id;
+        if matches!(tx_inner.intent, Some(TransactionIntent::WriteOnly)) {
+            tx_inner.concurrency_mgr.lock_x(blk, tx_id)?;
+        } else {
+            tx_inner.concurrency_mgr.lock_s(blk, tx_id)?;
+        }
+        
         let guard = tx_inner
             .buffers
             .get_buffer(blk)
@@ -147,7 +156,13 @@ impl<'a> Transaction<'a> {
 
     pub fn get_string(&self, blk: &BlockId, offset: usize) -> DbResult<String> {
         let mut tx_inner = self.inner.borrow_mut();
-        tx_inner.concurrency_mgr.lock_shared(blk)?;
+        let tx_id = tx_inner.id;
+        if matches!(tx_inner.intent, Some(TransactionIntent::WriteOnly)) {
+            tx_inner.concurrency_mgr.lock_x(blk, tx_id)?;
+        } else {
+            tx_inner.concurrency_mgr.lock_s(blk, tx_id)?;
+        }
+
         let guard = tx_inner
             .buffers
             .get_buffer(blk)
@@ -164,7 +179,8 @@ impl<'a> Transaction<'a> {
         log: bool, /*TODO should be true by default*/
     ) -> DbResult<()> {
         let mut tx_inner = self.inner.borrow_mut();
-        tx_inner.concurrency_mgr.lock_exclusive(blk)?;
+        let tx_id = tx_inner.id;
+        tx_inner.concurrency_mgr.lock_x(blk, tx_id)?;
         let guard = tx_inner
             .buffers
             .get_buffer(blk)
@@ -191,7 +207,8 @@ impl<'a> Transaction<'a> {
 
     pub fn set_string(&self, blk: &BlockId, offset: usize, val: &str, log: bool) -> DbResult<()> {
         let mut tx_inner = self.inner.borrow_mut();
-        tx_inner.concurrency_mgr.lock_exclusive(blk)?;
+        let tx_id = tx_inner.id;
+        tx_inner.concurrency_mgr.lock_x(blk, tx_id)?;
         let guard = tx_inner
             .buffers
             .get_buffer(blk)
@@ -218,15 +235,28 @@ impl<'a> Transaction<'a> {
 
     pub fn size(&self, file_name: &str) -> DbResult<i32> {
         let mut tx_inner = self.inner.borrow_mut();
+        let tx_id = tx_inner.id;
         let dummy_blk = BlockId::new(file_name.to_string(), -1);
-        tx_inner.concurrency_mgr.lock_shared(&dummy_blk)?;
+
+        if matches!(tx_inner.intent, Some(TransactionIntent::WriteOnly)) {
+            tx_inner.concurrency_mgr.lock_x(&dummy_blk, tx_id)?; // TODO should be S lock
+        } else {
+            tx_inner.concurrency_mgr.lock_s(&dummy_blk, tx_id)?;
+        }
+
         Ok(tx_inner.storage_mgr.block_cnt(file_name)?)
     }
 
     pub fn append(&self, file_name: &str) -> DbResult<BlockId> {
         let mut tx_inner = self.inner.borrow_mut();
+        let tx_id = tx_inner.id;
         let dummy_blk = BlockId::new(file_name.to_string(), -1);
-        tx_inner.concurrency_mgr.lock_exclusive(&dummy_blk)?;
+
+        if matches!(tx_inner.intent, Some(TransactionIntent::WriteOnly)) {
+            tx_inner.concurrency_mgr.lock_x(&dummy_blk, tx_id)?; // TODO should be S lock
+        } else {
+            tx_inner.concurrency_mgr.lock_s(&dummy_blk, tx_id)?;
+        }
         Ok(tx_inner.storage_mgr.append(file_name)?)
     }
 
@@ -258,11 +288,23 @@ mod tests {
     use tempfile::TempDir;
 
     struct TestEnvironment {
-        _temp_dir: TempDir,
+        _temp_dir: Arc<TempDir>,
         storage_mgr: Arc<dyn StorageMgr>,
         log_mgr: Arc<LogMgr>,
         buffer_mgr: Arc<BufferMgr>,
         lock_table: Arc<LockTable>,
+    }
+
+    impl Clone for TestEnvironment {
+        fn clone(&self) -> Self {
+            Self {
+                _temp_dir: Arc::clone(&self._temp_dir),
+                storage_mgr: Arc::clone(&self.storage_mgr),
+                log_mgr: Arc::clone(&self.log_mgr),
+                buffer_mgr: Arc::clone(&self.buffer_mgr),
+                lock_table: Arc::clone(&self.lock_table),
+            }
+        }
     }
 
     impl TestEnvironment {
@@ -279,7 +321,7 @@ mod tests {
             let lock_table = Arc::new(LockTable::new());
 
             Ok(TestEnvironment {
-                _temp_dir: temp_dir,
+                _temp_dir: Arc::new(temp_dir),
                 storage_mgr,
                 log_mgr,
                 buffer_mgr,
@@ -293,6 +335,7 @@ mod tests {
                 &self.log_mgr,
                 &self.buffer_mgr,
                 Arc::clone(&self.lock_table),
+                None
             )
         }
     }
@@ -389,6 +432,51 @@ mod tests {
         let str_val2 = tx3.get_string(&blk1, 300)?;
         assert_eq!(str_val2, "ABC");
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_transaction_stress_x_locks() -> DbResult<()> {
+        const NUM_THREADS: usize = 5;
+        const OPERATIONS_PER_THREAD: usize = 1_000;
+
+        let env = TestEnvironment::new()?;
+        {
+            let tx = env.new_transaction()?;
+            let blk = tx.append("test_file")?;
+            tx.pin(&blk)?;
+            tx.commit()?;
+        }
+        
+        let mut handles = Vec::new();
+        for thread_id in 0..NUM_THREADS {
+            
+            let env_clone = env.clone();
+            let handle = std::thread::spawn(move || -> DbResult<i32> {
+                let mut successful_ops = 0;
+                
+                for op_num in 0..OPERATIONS_PER_THREAD {
+                    let tx = env_clone.new_transaction().unwrap();       
+                    let blk = BlockId::new("test_file".to_string(), 0);
+                    tx.pin(&blk).unwrap();
+                    let write_value = (thread_id * 10000 + op_num) as i32;
+                    tx.set_int(&blk, 100, write_value, true).unwrap();
+                    tx.unpin(&blk);
+                    tx.commit().unwrap();
+                    successful_ops += 1;
+                }
+                Ok(successful_ops)
+            });
+            
+            handles.push(handle);
+        }
+        
+        let mut total_operations = 0;
+        for handle in handles {
+            total_operations += handle.join().unwrap()?;
+        }
+        
+        assert_eq!((NUM_THREADS * OPERATIONS_PER_THREAD) as i32, total_operations);
         Ok(())
     }
 }
