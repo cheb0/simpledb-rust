@@ -54,10 +54,9 @@ impl LockTable {
         Ok(())
     }
 
-    /// Acquire an exclusive lock on the specified block.
-    /// If a shared or exclusive lock exists on the block, then the method waits
-    /// until the lock is released.
-    pub fn lock_exclusive(&self, blk: &BlockId) -> DbResult<()> {
+    /// Upgrades lock from S to X
+    /// This method must be called if S lock has been already taken for the provided block
+    pub fn upgrade_to_exclusive(&self, blk: &BlockId) -> DbResult<()> {
         let start_time = Instant::now();
         let max_duration = Duration::from_millis(self.max_time);
 
@@ -73,6 +72,32 @@ impl LockTable {
         }
 
         if self.has_other_shared_locks(&locks, blk) {
+            return Err(DbError::LockAbort);
+        }
+
+        locks.insert(blk.clone(), -1);
+
+        Ok(())
+    }
+
+
+    /// Acquire an exclusive lock on the specified block.
+    pub fn lock_exclusive(&self, blk: &BlockId) -> DbResult<()> {
+        let start_time = Instant::now();
+        let max_duration = Duration::from_millis(self.max_time);
+
+        let mut locks = self.locks.lock().unwrap();
+
+        while self.has_shared_locks(&locks, blk) && !self.waiting_too_long(start_time) {
+            let result = self.cond.wait_timeout(locks, max_duration).unwrap();
+            locks = result.0;
+
+            if result.1.timed_out() && self.has_shared_locks(&locks, blk) {
+                return Err(DbError::LockAbort);
+            }
+        }
+
+        if self.has_shared_locks(&locks, blk) {
             return Err(DbError::LockAbort);
         }
 
@@ -100,6 +125,10 @@ impl LockTable {
         self.get_lock_val(locks, blk) < 0
     }
 
+    fn has_shared_locks(&self, locks: &HashMap<BlockId, i32>, blk: &BlockId) -> bool {
+        self.get_lock_val(locks, blk) > 0
+    }
+
     fn has_other_shared_locks(&self, locks: &HashMap<BlockId, i32>, blk: &BlockId) -> bool {
         self.get_lock_val(locks, blk) > 1
     }
@@ -119,6 +148,7 @@ mod tests {
     use std::sync::Arc;
     use std::thread;
     use std::time::Duration;
+    use rand::Rng;
 
     #[test]
     fn test_lock_table() {
@@ -156,6 +186,18 @@ mod tests {
     }
 
     #[test]
+    fn test_s_lock_then_x() {
+        let lock_table = LockTable::with_timeout(100);
+        let blk = BlockId::new("testfile".to_string(), 1);
+
+        lock_table.lock_shared(&blk).unwrap();
+
+        lock_table.upgrade_to_exclusive(&blk).unwrap();
+
+        lock_table.unlock(&blk);
+    }
+
+    #[test]
     fn test_lock_timeout() {
         let lock_table = LockTable::with_timeout(100);
         let blk = BlockId::new("testfile".to_string(), 1);
@@ -166,5 +208,108 @@ mod tests {
         assert!(matches!(result, Err(DbError::LockAbort)));
 
         lock_table.unlock(&blk);
+    }
+
+    #[test]
+    fn test_lock_table_shared_only_stress() {
+        const NUM_THREADS: usize = 5;
+        const OPERATIONS_PER_THREAD: usize = 5_000;
+        const NUM_BLOCKS: usize = 3; // Reduced to increase contention
+        
+        let lock_table = Arc::new(LockTable::new());
+        
+        let mut handles = Vec::new();
+        for _ in 0..NUM_THREADS {
+            let lock_table_clone = Arc::clone(&lock_table);
+            
+            let handle = thread::spawn(move || {
+                let mut rng = rand::rng();
+                
+                for _ in 0..OPERATIONS_PER_THREAD {
+                    let block_idx = rng.random_range(0..NUM_BLOCKS);
+                    let blk = BlockId::new("test_file".to_string(), block_idx as i32);
+                    
+                    lock_table_clone.lock_shared(&blk).unwrap();
+                    thread::sleep(Duration::from_micros(2));
+                    lock_table_clone.unlock(&blk);
+                }
+            });
+            
+            handles.push(handle);
+        }
+        
+        for handle in handles {
+            handle.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn test_lock_table_exclusive_only_stress() {
+        const NUM_THREADS: usize = 5;
+        const OPERATIONS_PER_THREAD: usize = 5_000;
+        const NUM_BLOCKS: usize = 3;
+        
+        let lock_table = Arc::new(LockTable::new());
+        
+        let mut handles = Vec::new();
+        for _ in 0..NUM_THREADS {
+            let lock_table_clone = Arc::clone(&lock_table);
+            
+            let handle = thread::spawn(move || {
+                let mut rng = rand::rng();
+                
+                for _ in 0..OPERATIONS_PER_THREAD {
+                    let block_idx = rng.random_range(0..NUM_BLOCKS);
+                    let blk = BlockId::new("test_file".to_string(), block_idx as i32);
+                    
+                    lock_table_clone.lock_exclusive(&blk).unwrap();
+                    thread::sleep(Duration::from_micros(2));
+                    lock_table_clone.unlock(&blk);
+                }
+            });
+            
+            handles.push(handle);
+        }
+        
+        for handle in handles {
+            handle.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn test_lock_table_mixed_pattern() {
+        const NUM_THREADS: usize = 5;
+        const OPERATIONS_PER_THREAD: usize = 5_000;
+        const NUM_BLOCKS: usize = 3;
+        
+        let lock_table = Arc::new(LockTable::new());
+        
+        let mut handles = Vec::new();
+        for _ in 0..NUM_THREADS {
+            let lock_table_clone = Arc::clone(&lock_table);
+            
+            let handle = thread::spawn(move || {
+                let mut rng = rand::rng();
+                
+                for _ in 0..OPERATIONS_PER_THREAD {
+                    let block_idx = rng.random_range(0..NUM_BLOCKS);
+                    let blk = BlockId::new("test_file".to_string(), block_idx as i32);
+                    
+                    if rng.random_bool(0.5) {
+                        lock_table_clone.lock_exclusive(&blk).unwrap();
+                    } else {
+                        lock_table_clone.lock_shared(&blk).unwrap();
+                    }
+                    thread::sleep(Duration::from_micros(2));
+                    lock_table_clone.unlock(&blk);
+                }
+            });
+            
+            handles.push(handle);
+        }
+        
+        for handle in handles {
+            handle.join().unwrap();
+        }
     }
 }
