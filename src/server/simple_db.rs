@@ -64,7 +64,6 @@ impl SimpleDB {
         )?);
 
         tx.commit()?;
-        drop(tx);
 
         let metadata_mgr = Arc::new(MetadataMgr::new(table_mgr, index_mgr)?);
         let planner = Planner::new(Arc::clone(&metadata_mgr));
@@ -152,20 +151,23 @@ mod tests {
                 .log_file("testlog"),
         )?;
 
-        let md_mgr = db.metadata_mgr();
+        {
+            let md_mgr = db.metadata_mgr();
+            let tx = db.new_tx()?;
+            let mut test_schema = Schema::new();
+            test_schema.add_int_field("id");
+            test_schema.add_string_field("name", 20);
+            md_mgr.create_table("test_table", &test_schema, tx.clone())?;
+            tx.commit()?;
+        }
 
-        let tx = db.new_tx()?;
-
-        let mut test_schema = Schema::new();
-        test_schema.add_int_field("id");
-        test_schema.add_string_field("name", 20);
-
-        md_mgr.create_table("test_table", &test_schema, tx.clone())?;
-
-        let layout = md_mgr.get_layout("test_table", tx.clone())?;
-        assert!(layout.slot_size() > 0);
-
-        tx.commit()?;
+        {
+            let tx = db.new_tx()?;
+            let md_mgr = db.metadata_mgr();
+            let layout = md_mgr.get_layout("test_table", tx.clone())?;
+            assert!(layout.slot_size() > 0);
+            tx.commit()?;
+        }
 
         Ok(())
     }

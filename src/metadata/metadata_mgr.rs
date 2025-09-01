@@ -71,7 +71,6 @@ mod tests {
             .create_table("test_table", &table_schema, tx.clone())?;
 
         tx.commit()?;
-        drop(tx);
 
         let db2 = db.reopen()?;
         let tx = db2.new_tx()?;

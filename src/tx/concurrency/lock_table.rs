@@ -80,7 +80,6 @@ impl LockTable {
         Ok(())
     }
 
-
     /// Acquire an exclusive lock on the specified block.
     pub fn lock_x(&self, blk: &BlockId, tx_id: i32) -> DbResult<()> {
         let start_time = Instant::now();

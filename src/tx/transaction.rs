@@ -73,7 +73,7 @@ impl<'a> Transaction<'a> {
         })
     }
 
-    pub fn commit(&self) -> DbResult<()> {
+    pub fn commit(self) -> DbResult<()> {
         let mut tx_inner = self.inner.borrow_mut();
         tx_inner.buffer_mgr.flush_all(tx_inner.id)?;
 
@@ -89,7 +89,7 @@ impl<'a> Transaction<'a> {
         Ok(())
     }
 
-    pub fn rollback(&self) -> DbResult<()> {
+    pub fn rollback(self) -> DbResult<()> {
         self.do_rollback()?;
 
         let mut tx_inner = self.inner.borrow_mut();
