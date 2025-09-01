@@ -81,7 +81,8 @@ pub fn run_person_search_benchmark(db: &mut SimpleDB) -> DbResult<SearchResults>
                     break;
                 }
             }
-            scan.close();
+            drop(scan);
+
 
             if found {
                 successful_searches += 1;

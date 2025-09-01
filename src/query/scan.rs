@@ -12,6 +12,4 @@ pub trait Scan {
     fn get_string(&mut self, field_name: &str) -> DbResult<String>;
     fn get_val(&mut self, field_name: &str) -> DbResult<Constant>;
     fn has_field(&self, field_name: &str) -> bool;
-
-    fn close(&mut self);
 }

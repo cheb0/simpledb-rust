@@ -60,8 +60,4 @@ impl<'a> Scan for ProjectScan<'a> {
     fn has_field(&self, field_name: &str) -> bool {
         self.fields.iter().any(|f| f == field_name)
     }
-
-    fn close(&mut self) {
-        self.scan.close();
-    }
 }

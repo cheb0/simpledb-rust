@@ -42,10 +42,6 @@ impl<'a> Scan for SelectScan<'a> {
     fn has_field(&self, field_name: &str) -> bool {
         self.scan.has_field(field_name)
     }
-
-    fn close(&mut self) {
-        self.scan.close();
-    }
 }
 
 /* impl<'a> UpdateScan for SelectScan<'a> {
@@ -118,29 +114,29 @@ mod tests {
             Expr::constant(Constant::Int(1)),
         ));
 
-        let mut select_scan = SelectScan::new(Box::new(table_scan), pred);
+        {
+            let mut select_scan = SelectScan::new(Box::new(table_scan), pred);
 
-        select_scan.before_first()?;
+            select_scan.before_first()?;
 
-        // Should only get records with id = 1
-        let mut count = 0;
-        while select_scan.next()? {
-            count += 1;
-            let id = select_scan.get_int("id")?;
-            let name = select_scan.get_string("name")?;
+            // Should only get records with id = 1
+            let mut count = 0;
+            while select_scan.next()? {
+                count += 1;
+                let id = select_scan.get_int("id")?;
+                let name = select_scan.get_string("name")?;
 
-            assert_eq!(id, 1, "Filtered record should have id > 1");
+                assert_eq!(id, 1, "Filtered record should have id > 1");
 
-            match id {
-                1 => assert_eq!(name, "Alice"),
-                _ => panic!("Unexpected ID: {}", id),
+                match id {
+                    1 => assert_eq!(name, "Alice"),
+                    _ => panic!("Unexpected ID: {}", id),
+                }
             }
+            assert_eq!(count, 1, "Should have found one record with id = 1");
         }
-        assert_eq!(count, 1, "Should have found one record with id = 1");
 
-        select_scan.close();
         tx.commit()?;
-
         Ok(())
     }
 }

@@ -79,10 +79,6 @@ impl<'tx> TableScan<'tx> {
         self.current_slot = None;
         Ok(())
     }
-
-    pub fn close(&mut self) {
-        self.record_page.take();
-    }
 }
 
 impl<'tx> Scan for TableScan<'tx> {
@@ -143,10 +139,6 @@ impl<'tx> Scan for TableScan<'tx> {
 
     fn has_field(&self, field_name: &str) -> bool {
         self.layout.schema().has_field(field_name)
-    }
-
-    fn close(&mut self) {
-        self.record_page.take();
     }
 }
 
@@ -257,19 +249,19 @@ mod tests {
             scan.insert().expect(&format!("Failed to insert at {i}"));
             scan.set_int("id", i)?;
             scan.set_string("name", &format!("Entry{i}"))?;
-            scan.close();
         }
 
-        let mut scan = TableScan::new(tx.clone(), "test_table", layout.clone())?;
-        scan.before_first()?;
-        let mut i = 0;
-        while scan.next()? {
-            assert_eq!(i, scan.get_int("id")?);
-            i += 1;
+        {
+            let mut scan = TableScan::new(tx.clone(), "test_table", layout.clone())?;
+            scan.before_first()?;
+            let mut i = 0;
+            while scan.next()? {
+                assert_eq!(i, scan.get_int("id")?);
+                i += 1;
+            }
+            assert_eq!(num_keys, i);
         }
-        scan.close();
         tx.commit()?;
-        assert_eq!(num_keys, i);
 
         Ok(())
     }
@@ -288,27 +280,29 @@ mod tests {
         {
             for i in 0..num_keys {
                 let tx = db.new_tx()?;
-                let mut scan = TableScan::new(tx.clone(), "test_table", layout.clone())?;
-                scan.insert().expect(&format!("Failed to insert at {i}"));
-                scan.set_int("id", i)?;
-                scan.set_string("name", &format!("Entry{i}"))?;
-                scan.close();
+                {
+                    let mut scan = TableScan::new(tx.clone(), "test_table", layout.clone())?;
+                    scan.insert().expect(&format!("Failed to insert at {i}"));
+                    scan.set_int("id", i)?;
+                    scan.set_string("name", &format!("Entry{i}"))?;
+                }
                 tx.commit()?;
             }
         }
 
         {
             let tx = db.new_tx()?;
-            let mut scan = TableScan::new(tx.clone(), "test_table", layout.clone())?;
-            scan.before_first()?;
-            let mut i = 0;
-            while scan.next()? {
-                assert_eq!(i, scan.get_int("id")?);
-                i += 1;
+            {
+                let mut scan = TableScan::new(tx.clone(), "test_table", layout.clone())?;
+                scan.before_first()?;
+                let mut i = 0;
+                while scan.next()? {
+                    assert_eq!(i, scan.get_int("id")?);
+                    i += 1;
+                }
+                assert_eq!(num_keys, i);
             }
-            scan.close();
             tx.commit()?;
-            assert_eq!(num_keys, i);
         }
         Ok(())
     }

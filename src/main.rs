@@ -106,14 +106,15 @@ fn main() -> DbResult<()> {
         let plan = db
             .planner()
             .create_query_plan("SELECT id, name, age FROM test_table", tx.clone())?;
-        let mut scan = plan.open(tx.clone());
 
         let mut total_rows = 0;
-        scan.before_first()?;
-        while scan.next()? {
-            total_rows += 1;
+        {
+            let mut scan = plan.open(tx.clone());
+            scan.before_first()?;
+            while scan.next()? {
+                total_rows += 1;
+            }
         }
-        scan.close();
 
         println!("\nFinal table contains {} total rows", total_rows);
         println!("Expected: {} initial + {} inserted = {} total",

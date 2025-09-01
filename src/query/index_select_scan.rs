@@ -62,11 +62,11 @@ impl<'tx> Scan for IndexSelectScan<'tx> {
     fn has_field(&self, field_name: &str) -> bool {
         self.table_scan.has_field(field_name)
     }
+}
 
-    /// Closes the scan by closing both the index and the table scan.
-    fn close(&mut self) {
+impl<'tx> Drop for IndexSelectScan<'tx> {
+    fn drop(&mut self) {
         self.index.close();
-        self.table_scan.close();
     }
 }
 
@@ -144,7 +144,6 @@ mod tests {
         assert!(names.contains(&"Alice".to_string()));
         assert!(names.contains(&"Charlie".to_string()));
 
-        index_scan.close();
         tx.commit()?;
         Ok(())
     }
@@ -187,28 +186,28 @@ mod tests {
         index.insert(&Constant::string("Bob"), &rid2)?;
         index.insert(&Constant::string("Alice"), &rid3)?;
 
-        let mut index_scan = IndexSelectScan::new(
-            TableScan::new(tx.clone(), "test_table", layout.clone())?,
-            Box::new(index),
-            Constant::string("Alice"),
-        )?;
-
         let mut count = 0;
         let mut names = Vec::new();
         let mut ages = Vec::new();
 
-        while index_scan.next()? {
-            count += 1;
-            let name = index_scan.get_string("name")?;
-            let age = index_scan.get_int("age")?;
-            names.push(name);
-            ages.push(age);
+        {
+            let mut index_scan = IndexSelectScan::new(
+                TableScan::new(tx.clone(), "test_table", layout.clone())?,
+                Box::new(index),
+                Constant::string("Alice"),
+            )?;
+
+            while index_scan.next()? {
+                count += 1;
+                let name = index_scan.get_string("name")?;
+                let age = index_scan.get_int("age")?;
+                names.push(name);
+                ages.push(age);
+            }
         }
 
         assert_eq!(count, 2, "Should find 2 records with name = 'Alice'");
         assert_eq!(names, vec!["Alice", "Alice"]);
-
-        index_scan.close();
         tx.commit()?;
         Ok(())
     }
@@ -237,20 +236,21 @@ mod tests {
 
         index.insert(&Constant::int(25), &rid)?;
 
-        let mut index_scan = IndexSelectScan::new(
-            TableScan::new(tx.clone(), "test_table", layout.clone())?,
-            Box::new(index),
-            Constant::int(99),
-        )?;
-
-        let mut count = 0;
-        while index_scan.next()? {
-            count += 1;
+        {
+            let mut index_scan = IndexSelectScan::new(
+                TableScan::new(tx.clone(), "test_table", layout.clone())?,
+                Box::new(index),
+                Constant::int(99),
+            )?;
+    
+            let mut count = 0;
+            while index_scan.next()? {
+                count += 1;
+            }
+    
+            assert_eq!(count, 0, "Should find no records with age = 99");
         }
 
-        assert_eq!(count, 0, "Should find no records with age = 99");
-
-        index_scan.close();
         tx.commit()?;
         Ok(())
     }

@@ -119,8 +119,6 @@ impl Planner {
             }
         }
 
-        scan.close();
-
         Ok(1)
     }
 
@@ -180,7 +178,6 @@ impl Planner {
             }
         }
 
-        scan.close();
         Ok(affected_rows)
     }
 }
@@ -230,12 +227,13 @@ mod tests {
         age_index.close();
 
         // Verify we can actually navigate to record
-        let mut table_scan = TableScan::new(tx.clone(), "test_table", Layout::new(schema))?;
-        table_scan.move_to_rid(rid)?;
-        assert_eq!(1, table_scan.get_int("id")?);
-        assert_eq!("Alice", table_scan.get_string("name")?);
-        assert_eq!(25, table_scan.get_int("age")?);
-        table_scan.close();
+        {
+            let mut table_scan = TableScan::new(tx.clone(), "test_table", Layout::new(schema))?;
+            table_scan.move_to_rid(rid)?;
+            assert_eq!(1, table_scan.get_int("id")?);
+            assert_eq!("Alice", table_scan.get_string("name")?);
+            assert_eq!(25, table_scan.get_int("age")?);
+        }
 
         tx.commit()?;
         Ok(())
