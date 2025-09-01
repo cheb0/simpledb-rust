@@ -149,7 +149,7 @@ impl<'a> Transaction<'a> {
         let guard = tx_inner
             .buffers
             .get_buffer(blk)
-            .ok_or_else(|| DbError::BufferNotPinned(blk.clone()))?;
+            .expect(&format!("Block {blk} not pinned"));
         let buffer = guard.borrow();
         Ok(buffer.page().get_int(offset))
     }
@@ -166,7 +166,7 @@ impl<'a> Transaction<'a> {
         let guard = tx_inner
             .buffers
             .get_buffer(blk)
-            .ok_or_else(|| DbError::BufferNotPinned(blk.clone()))?;
+            .expect(&format!("Buffer {blk} not pinned"));
         let buffer = guard.borrow();
         Ok(buffer.page().get_string(offset))
     }
@@ -184,7 +184,7 @@ impl<'a> Transaction<'a> {
         let guard = tx_inner
             .buffers
             .get_buffer(blk)
-            .ok_or_else(|| DbError::BufferNotPinned(blk.clone()))?;
+            .expect(&format!("Block {blk} not pinned"));
         let mut buffer = guard.borrow_mut();
 
         if log {
@@ -212,7 +212,7 @@ impl<'a> Transaction<'a> {
         let guard = tx_inner
             .buffers
             .get_buffer(blk)
-            .ok_or_else(|| DbError::BufferNotPinned(blk.clone()))?;
+            .expect(&format!("Block {blk} not pinned"));
         let mut buffer = guard.borrow_mut();
 
         if log {

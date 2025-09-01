@@ -1,13 +1,8 @@
 use bincode;
 use thiserror::Error;
 
-use crate::storage::BlockId;
-
 #[derive(Error, Debug)]
 pub enum DbError {
-    #[error("Buffer not pinned: {0:?}")]
-    BufferNotPinned(BlockId),
-
     #[error("Buffer abort exception: {0}")]
     BufferAbort(String),
 

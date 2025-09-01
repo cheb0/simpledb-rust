@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use serde::{Deserialize, Serialize};
 
 /// Represents a block identifier in the SimpleDB system.
@@ -22,5 +24,11 @@ impl BlockId {
 
     pub fn number(&self) -> i32 {
         self.number
+    }
+}
+
+impl Display for BlockId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "[{}, {}]", self.file_name, self.number)
     }
 }
