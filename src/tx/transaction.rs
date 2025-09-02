@@ -81,9 +81,10 @@ impl<'a> Transaction<'a> {
         let bytes = commit_record.to_bytes()?;
         let lsn = tx_inner.log_mgr.append(&bytes)?;
         tx_inner.log_mgr.flush(lsn)?;
+        let tx_id = tx_inner.id;
         // TODO fsync
 
-        tx_inner.concurrency_mgr.release();
+        tx_inner.concurrency_mgr.release(tx_id);
 
         tx_inner.buffers.unpin_all();
         Ok(())
@@ -99,8 +100,9 @@ impl<'a> Transaction<'a> {
         let bytes = rollback_record.to_bytes()?;
         let lsn = tx_inner.log_mgr.append(&bytes)?;
         tx_inner.log_mgr.flush(lsn)?;
+        let tx_id = tx_inner.id;
 
-        tx_inner.concurrency_mgr.release();
+        tx_inner.concurrency_mgr.release(tx_id);
 
         tx_inner.buffers.unpin_all();
         Ok(())

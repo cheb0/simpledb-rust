@@ -47,9 +47,9 @@ impl ConcurrencyMgr {
         Ok(())
     }
 
-    pub fn release(&mut self) {
+    pub fn release(&mut self, tx_id: i32) {
         for blk in self.locks.keys() {
-            self.lock_table.unlock(blk);
+            self.lock_table.unlock(blk, tx_id);
         }
         self.locks.clear();
     }
@@ -82,14 +82,14 @@ mod tests {
 
         let handle = thread::spawn(move || -> DbResult<()> {
             let mut cm2: ConcurrencyMgr = ConcurrencyMgr::new(lock_table_clone);
-            cm2.lock_s(&blk_clone, 0)?;
+            cm2.lock_s(&blk_clone, 1)?;
 
-            let result = cm2.lock_x(&blk_clone, 0);
+            let result = cm2.lock_x(&blk_clone, 1);
 
             // two S locks - fail to acquire X lock
             assert!(matches!(result, Err(DbError::LockAbort)));
 
-            cm2.release();
+            cm2.release(1);
             Ok(())
         });
 
@@ -99,7 +99,7 @@ mod tests {
         let result = ccy_mgr.lock_x(&blk, 0);
         assert!(result.is_ok());
 
-        ccy_mgr.release();
+        ccy_mgr.release(0);
 
         let lock_table_clone = Arc::clone(&lock_table);
         let blk_clone = blk.clone();
@@ -107,8 +107,8 @@ mod tests {
         let handle = thread::spawn(move || -> DbResult<()> {
             // it's free, should be able to acquire X lock
             let mut cm3 = ConcurrencyMgr::new(lock_table_clone);
-            cm3.lock_x(&blk_clone, 0)?;
-            cm3.release();
+            cm3.lock_x(&blk_clone, 2)?;
+            cm3.release(2);
             Ok(())
         });
 
@@ -142,7 +142,7 @@ mod tests {
                     
                     concurrency_mgr.lock_x(&blk, 0).unwrap();
                     thread::sleep(Duration::from_micros(1));
-                    concurrency_mgr.release();
+                    concurrency_mgr.release(0);
                     // concurrency_mgr = ConcurrencyMgr::new(Arc::clone(&lock_table_clone));
                     
                     total_lock_time += lock_start.elapsed();
@@ -219,7 +219,7 @@ mod tests {
                             
                             thread::sleep(Duration::from_micros(2));
                             
-                            concurrency_mgr.release();
+                            concurrency_mgr.release(op_num as i32);
                             concurrency_mgr = ConcurrencyMgr::new(Arc::clone(&lock_table_clone));
                         }
                         Err(e) => {

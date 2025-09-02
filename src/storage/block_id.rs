@@ -29,6 +29,6 @@ impl BlockId {
 
 impl Display for BlockId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "[{}, {}]", self.file_name, self.number)
+        write!(f, "[{}, {}]", self.file_name, self.number)
     }
 }
